@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 import json
 from pathlib import Path
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -92,6 +93,7 @@ def test_realtime_adapter_mints_scoped_ephemeral_secret() -> None:
         }
         assert session["tools"][0]["name"] == "submit_mission"
         assert "Never guess whether" in session["instructions"]
+        assert "current local date" in session["instructions"]
         return httpx.Response(
             200,
             json={"value": "ephemeral-client-secret", "expires_at": 1_900_000_000},
@@ -106,6 +108,7 @@ def test_realtime_adapter_mints_scoped_ephemeral_secret() -> None:
             secret = await adapter.create_client_secret(
                 language="pl-PL",
                 safety_identifier="hashed-user",
+                timezone="Europe/Warsaw",
             )
             assert secret.value == "ephemeral-client-secret"
             assert secret.model == "gpt-realtime-2"
@@ -113,6 +116,27 @@ def test_realtime_adapter_mints_scoped_ephemeral_secret() -> None:
             assert "standard-server-key" not in repr(adapter.settings)
 
     asyncio.run(scenario())
+
+
+def test_realtime_session_includes_user_local_date_for_relative_deadlines() -> None:
+    adapter = OpenAIRealtimeAdapter(
+        realtime_settings(),
+        clock=lambda: datetime(2026, 7, 11, 22, 30, tzinfo=UTC),
+    )
+    try:
+        intake = adapter._session_payload(
+            "en-PL", timezone="Europe/Warsaw"
+        )["session"]
+        mission = adapter._session_payload(
+            "pl-PL", bound_mission_context(), "Europe/Warsaw"
+        )["session"]
+    finally:
+        asyncio.run(adapter.aclose())
+
+    expected = "current local date is 2026-07-12 in timezone Europe/Warsaw"
+    assert expected in intake["instructions"]
+    assert expected in mission["instructions"]
+    assert "today, tomorrow and weekdays" in intake["instructions"]
 
 
 def test_realtime_adapter_redacts_provider_error_body() -> None:
@@ -276,6 +300,7 @@ class FakeRealtime:
     closed: bool = False
     safety_identifier: str | None = None
     language: str | None = None
+    timezone: str | None = None
     mission_context: dict[str, object] | None = None
 
     async def create_client_secret(
@@ -283,10 +308,12 @@ class FakeRealtime:
         *,
         language: str,
         safety_identifier: str,
+        timezone: str = "UTC",
         mission_context: dict[str, object] | None = None,
     ) -> RealtimeClientSecret:
         self.language = language
         self.safety_identifier = safety_identifier
+        self.timezone = timezone
         self.mission_context = mission_context
         return RealtimeClientSecret(
             value="short-lived-secret",
@@ -327,6 +354,7 @@ def test_realtime_endpoint_returns_only_ephemeral_credentials(tmp_path: Path) ->
     }
     assert "standard-server-key" not in response.text
     assert fake.language == "pl-PL"
+    assert fake.timezone == "Europe/Warsaw"
     assert fake.safety_identifier == sha256(b"done:demo-user").hexdigest()
     assert fake.mission_context is None
     assert capabilities.json()["realtime"]["status"] == "available"

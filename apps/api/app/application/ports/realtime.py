@@ -29,6 +29,7 @@ class RealtimeSessionPort(Protocol):
         *,
         language: str,
         safety_identifier: str,
+        timezone: str = "UTC",
         mission_context: dict[str, Any] | None = None,
     ) -> RealtimeClientSecret: ...
 

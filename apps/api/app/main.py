@@ -416,6 +416,7 @@ def create_app(
                 "Live voice is not configured on this server"
             )
         safety_identifier = sha256(b"done:demo-user").hexdigest()
+        user_timezone = user_service.get_profile().profile.timezone
         mission_context: dict[str, Any] | None = None
         if payload.mission_id:
             detail = workflow.get_detail(payload.mission_id)
@@ -533,6 +534,7 @@ def create_app(
         secret = await resolved_realtime.create_client_secret(
             language=payload.language,
             safety_identifier=safety_identifier,
+            timezone=user_timezone,
             mission_context=mission_context,
         )
         return {
