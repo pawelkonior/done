@@ -303,7 +303,7 @@ export function createGraph(container: HTMLElement): Graph {
       const title = document.createElement("strong");
       title.textContent = product.title;
       const meta = document.createElement("span");
-      meta.textContent = `${product.quantity} × ${product.state}${product.simulated ? " · simulation" : ""}`;
+      meta.textContent = `${product.quantity} × ${product.state}`;
       const route = document.createElement("span");
       route.className = "topology-product-route";
       route.textContent = `→ ${product.storeName}`;

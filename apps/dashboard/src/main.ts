@@ -357,7 +357,7 @@ simulateBatchTwoButton.addEventListener("click", () => {
   checkoutRevision = 0;
   dispatch({
     type: "payment.attempted",
-    title: "Simulation: Batch 1 payment started",
+    title: "Batch 1 payment started",
     severity: "info",
     created_at: new Date().toISOString(),
   });
@@ -368,7 +368,7 @@ simulateBatchTwoButton.addEventListener("click", () => {
       checkoutRevision = 1;
       dispatch({
         type: "payment.authorized",
-        title: "Simulation: Batch 1 purchased — projection recalculated",
+        title: "Batch 1 purchased — projection recalculated",
         severity: "info",
         created_at: new Date().toISOString(),
       });
@@ -379,7 +379,7 @@ simulateBatchTwoButton.addEventListener("click", () => {
       checkoutRevision = 2;
       dispatch({
         type: "payment.declined",
-        title: "Simulation: Batch 2 declined — remaining cart recalculated",
+        title: "Batch 2 declined — remaining cart recalculated",
         severity: "warning",
         created_at: new Date().toISOString(),
       });
@@ -390,13 +390,13 @@ simulateBatchTwoButton.addEventListener("click", () => {
       checkoutRevision = 3;
       dispatch({
         type: "portfolio.replanned",
-        title: "Simulation: new portfolio split the failed group across Party&Co and Fresh Day",
+        title: "New portfolio split the failed group across Party&Co and Fresh Day",
         severity: "info",
         created_at: new Date().toISOString(),
       });
       dispatch({
         type: "payment.attempted",
-        title: "Simulation: replacement-store payment retries started",
+        title: "Replacement-store payment retries started",
         severity: "info",
         created_at: new Date().toISOString(),
       });

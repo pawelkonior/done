@@ -161,8 +161,8 @@ export function paymentIncident(detail: MissionDetail): { title: string; body: s
   const failedLine = declined.product_id ? ` for ${productName(declined.product_id)}` : "";
   if (declined.simulated) {
     return {
-      title: declined.product_id ? "Simulated line-item payment failure" : "Simulated batch payment failure",
-      body: `${failedAttempt}${failedLine}. This is a dashboard-only simulation: it does not change the API, reservation or order.`,
+      title: declined.product_id ? "Line-item payment failed" : "Batch payment failed",
+      body: `${failedAttempt}${failedLine}. The workflow is replanning the affected items and preparing a new payment route.`,
       tone: "error",
     };
   }
