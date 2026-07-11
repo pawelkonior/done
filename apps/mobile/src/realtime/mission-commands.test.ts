@@ -55,6 +55,8 @@ function missionDetail(overrides: Partial<MissionDetail> = {}): MissionDetail {
       amount: 499.99,
       currency: "PLN",
     },
+    portfolio_decision: null,
+    order: null,
     events: [],
     metrics: {
       budget: 500,

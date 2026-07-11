@@ -64,6 +64,8 @@ const updatedDetail = {
   contract: null,
   basket: null,
   approval: null,
+  portfolio_decision: null,
+  order: null,
   events: [],
   metrics: {
     budget: 500,
