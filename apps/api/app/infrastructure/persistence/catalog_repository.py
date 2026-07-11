@@ -74,6 +74,7 @@ class SQLiteCatalogRepository:
                 f"""
                 SELECT store_id, store_name, city, store_status,
                        product_id, sku, product_name, brand, category, unit_label,
+                       product_url,
                        price_cents, currency, price_display, quantity,
                        inventory_status, effective_status, is_available, updated_at
                 FROM catalog_availability
@@ -96,6 +97,7 @@ class SQLiteCatalogRepository:
                 brand=row["brand"],
                 category=row["category"],
                 unit_label=row["unit_label"],
+                product_url=row["product_url"],
                 price_cents=int(row["price_cents"]),
                 currency=row["currency"],
                 price_display=row["price_display"],

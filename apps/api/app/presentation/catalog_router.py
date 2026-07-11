@@ -31,6 +31,7 @@ class CatalogOfferResponse(StrictModel):
     brand: str
     category: str
     unit_label: str
+    product_url: str
     price_cents: int
     currency: str
     price: float
@@ -62,6 +63,7 @@ def _offer_response(offer: CatalogOffer) -> CatalogOfferResponse:
         brand=offer.brand,
         category=offer.category,
         unit_label=offer.unit_label,
+        product_url=offer.product_url,
         price_cents=offer.price_cents,
         currency=offer.currency,
         price=offer.price_cents / 100,
@@ -92,7 +94,7 @@ def create_catalog_router(service: CatalogApplicationService) -> APIRouter:
         min_price_cents: Annotated[int | None, Query(ge=0)] = None,
         max_price_cents: Annotated[int | None, Query(ge=0)] = None,
         sort: Annotated[CatalogSort, Query()] = "product",
-        limit: Annotated[int, Query(ge=1, le=100)] = 100,
+        limit: Annotated[int, Query(ge=1, le=150)] = 150,
         offset: Annotated[int, Query(ge=0)] = 0,
     ) -> CatalogOfferListResponse:
         try:

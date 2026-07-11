@@ -160,32 +160,40 @@ Poniższy przykład jest skrócony; pole `items` powtarza dokładnie listę
 {
   "offers": [
     {
-      "store_id": "store-budget",
-      "store_name": "Budget Market",
+      "store_id": "store-delio",
+      "store_name": "delio",
       "city": "Warsaw",
       "store_status": "open",
-      "product_id": "product-water",
-      "sku": "MOCK-DR-001",
-      "product_name": "Still water 1.5 l",
-      "brand": "Clear Spring",
-      "category": "drinks",
-      "unit_label": "1.5 l bottle",
-      "price_cents": 299,
+      "product_id": "product-delio-a0000718",
+      "sku": "A0000718",
+      "product_name": "Banan",
+      "brand": "TARGBAN/WIGANT",
+      "category": "fruit",
+      "unit_label": "1 kg",
+      "product_url": "https://delio.com.pl/products/A0000718-banan",
+      "price_cents": 589,
       "currency": "PLN",
-      "price": 2.99,
-      "price_display": "2.99 PLN",
-      "quantity": 120,
+      "price": 5.89,
+      "price_display": "5.89 PLN",
+      "quantity": 199,
       "inventory_status": "available",
       "effective_status": "available",
       "is_available": true,
-      "updated_at": "2026-07-11T10:00:00Z"
+      "updated_at": "2026-07-11T13:00:00Z"
     }
   ],
-  "total": 54,
-  "limit": 100,
+  "total": 140,
+  "limit": 150,
   "offset": 0
 }
 ```
+
+Katalog jest snapshotem badawczym 140 ofert dla urodzin dzieci w wieku 7–8 lat,
+z czego 29 produktów ma motyw Minecraft.
+`product_url` wskazuje prawdziwą kartę produktu, a cena była obserwowana
+2026-07-11; nie jest to integracja cenowa w czasie rzeczywistym. Ilości Delio
+pochodzą z publicznych danych produktu, natomiast ilości pozostałych sklepów są
+danymi demonstracyjnymi. Domyślny i maksymalny `limit` wynosi 150.
 
 Dozwolone statusy efektywne to `available`, `low_stock`, `out_of_stock`,
 `discontinued` i `store_unavailable`. Zamknięty sklep wymusza

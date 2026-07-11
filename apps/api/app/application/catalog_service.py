@@ -28,6 +28,7 @@ class CatalogOffer:
     brand: str
     category: str
     unit_label: str
+    product_url: str
     price_cents: int
     currency: str
     price_display: str

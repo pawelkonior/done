@@ -15,16 +15,34 @@ The database defaults to `apps/api/done.sqlite3`. Override it with
 
 ## Mock store catalog
 
-`sql/mock_catalog.sql` contains an idempotent SQLite schema and mock data for
-stores, products, store-specific prices, inventory quantities, statuses and
-availability. Prices use integer minor units (`1299` means `12.99 PLN`). The API
-loads this catalog automatically when it initializes a database.
+`data/child_birthday_catalog.json` contains 140 API-ready offers researched for
+a birthday party and gifts for children aged 7–8. It covers Allegro, Auchan,
+Decathlon, delio, Kaufland Marketplace, Lidl and Smyk. Every row includes a real
+HTTPS product page, while prices are a snapshot observed on 2026-07-11.
+
+The normalized research input is kept in
+`data/child_birthday_catalog_research.tsv`. The generated `sql/mock_catalog.sql`
+contains the matching standalone SQLite schema and seed. Prices use integer
+minor units (`1299` means `12.99 PLN`). The API loads the catalog automatically
+when it initializes a database.
+
+For delio, quantity and availability were read from its public product data.
+Other merchants do not expose one dependable, location-independent quantity,
+so their `quantity` values are deterministic demo inventory. Marketplace prices
+exclude delivery, and every price or availability can change after the snapshot.
 
 Create a separate mock catalog database:
 
 ```bash
 cd apps/api
 sqlite3 mock_catalog.sqlite3 < sql/mock_catalog.sql
+```
+
+Verify that the generated JSON and SQL still match the curated research input:
+
+```bash
+cd apps/api
+python scripts/generate_birthday_catalog.py --check
 ```
 
 Inspect products that can currently be purchased, ordered by price:
@@ -45,12 +63,13 @@ The same data is available through `GET /v1/catalog/offers`. Filters compose
 with one another:
 
 ```bash
-curl "http://localhost:8001/v1/catalog/offers?category=drinks&available=true&sort=price_asc"
+curl "http://localhost:8001/v1/catalog/offers?q=Minecraft&available=true&sort=price_asc&limit=150"
 ```
 
 Supported filters are `q`, `store_id`, `product_id`, `category`,
 `effective_status`, `available`, `min_price_cents`, `max_price_cents`, `sort`,
-`limit` and `offset`.
+`limit` and `offset`. The default and maximum limit are both 150. Each item
+contains `product_url` alongside the normalized price and inventory fields.
 
 Main endpoints:
 
