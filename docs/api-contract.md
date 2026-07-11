@@ -117,8 +117,8 @@ również wtedy, gdy adapter raportuje `unavailable`.
 ```
 
 Przy włączonym Ollama sekcja AI może dodatkowo zawierać `version`, `model`,
-`model_available`, `model_loaded` i `detail`. Sekcja STT może zawierać `model`,
-`model_cached`, `model_loaded`, `ffmpeg` i `detail`.
+`model_available`, `model_loaded` i `detail`. Sekcja STT zawiera `model`, status
+dostępności OpenAI i bezpieczny `detail`.
 
 ### `POST /v1/realtime/client-secret`
 
