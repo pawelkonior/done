@@ -1,0 +1,17 @@
+node_modules/
+.expo/
+dist/
+web-build/
+.DS_Store
+*.log
+.env
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.db
+*.sqlite3
+*.egg-info/
+apps/api/data/*.db
+apps/mobile/ios/
+apps/mobile/android/
