@@ -1,0 +1,244 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="760" viewBox="0 0 1600 760" role="img" aria-labelledby="mission-flow-title mission-flow-desc">
+  <title id="mission-flow-title">Done governed execution flow</title>
+  <desc id="mission-flow-desc">A seven-step flow from voice or text through a contract, plan, guardrails, exact approval, and FundingGate to a verified Done outcome. Ambiguity follows an Ask, never guess branch. Missing authority or funding follows a Fail closed branch.</desc>
+
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#070914"/>
+      <stop offset="0.55" stop-color="#0A0D1C"/>
+      <stop offset="1" stop-color="#070914"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#151A31"/>
+      <stop offset="1" stop-color="#0D1122"/>
+    </linearGradient>
+    <linearGradient id="flow" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#9B5CFF"/>
+      <stop offset="1" stop-color="#4B7BFF"/>
+    </linearGradient>
+    <linearGradient id="doneCard" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#122A29"/>
+      <stop offset="1" stop-color="#0D171C"/>
+    </linearGradient>
+    <radialGradient id="purpleGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#9B5CFF" stop-opacity="0.23"/>
+      <stop offset="1" stop-color="#9B5CFF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="blueGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#4B7BFF" stop-opacity="0.2"/>
+      <stop offset="1" stop-color="#4B7BFF" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#FFFFFF" stroke-opacity="0.026" stroke-width="1"/>
+    </pattern>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#000000" flood-opacity="0.36"/>
+    </filter>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000000" flood-opacity="0.3"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#6F6DFF"/>
+    </marker>
+    <marker id="arrowSmall" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#9B5CFF"/>
+    </marker>
+    <style>
+      .ui { font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .eyebrow { fill: #9B5CFF; font-size: 14px; font-weight: 800; letter-spacing: 2.8px; }
+      .headline { fill: #FFFFFF; font-size: 44px; font-weight: 760; letter-spacing: -1.2px; }
+      .subtitle { fill: #AAB2CE; font-size: 19px; font-weight: 450; }
+      .stage { fill: #9EA8CA; font-size: 11px; font-weight: 800; letter-spacing: 1.65px; }
+      .step-title { fill: #FFFFFF; font-size: 23px; font-weight: 750; letter-spacing: -0.35px; }
+      .step-copy { fill: #AAB2CE; font-size: 14px; font-weight: 450; }
+      .step-number { fill: #FFFFFF; font-size: 12px; font-weight: 850; text-anchor: middle; dominant-baseline: middle; }
+      .branch-kicker { fill: #AAB2CE; font-size: 11px; font-weight: 800; letter-spacing: 1.8px; }
+      .branch-title { fill: #FFFFFF; font-size: 21px; font-weight: 780; letter-spacing: -0.2px; }
+      .branch-copy { fill: #AAB2CE; font-size: 14px; font-weight: 450; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="760" rx="28" fill="url(#background)"/>
+  <rect width="1600" height="760" rx="28" fill="url(#grid)"/>
+  <ellipse cx="330" cy="68" rx="390" ry="220" fill="url(#purpleGlow)"/>
+  <ellipse cx="1315" cy="190" rx="380" ry="250" fill="url(#blueGlow)"/>
+  <rect x="1" y="1" width="1598" height="758" rx="27" fill="none" stroke="#FFFFFF" stroke-opacity="0.08" stroke-width="2"/>
+
+  <g class="ui">
+    <g aria-label="Diagram heading">
+      <rect x="64" y="48" width="8" height="8" rx="2" fill="#9B5CFF"/>
+      <rect x="76" y="48" width="8" height="8" rx="2" fill="#4B7BFF"/>
+      <text x="96" y="57" class="eyebrow">DONE / CONTROL PLANE</text>
+      <text x="64" y="111" class="headline">From intent to outcome. Governed at every step.</text>
+      <text x="64" y="151" class="subtitle">Natural input becomes an explicit, approved and controlled execution — with zero silent assumptions.</text>
+
+      <g transform="translate(1267 52)">
+        <rect width="269" height="42" rx="21" fill="#10162A" stroke="#6D78A5" stroke-opacity="0.5"/>
+        <circle cx="24" cy="21" r="5" fill="#9B5CFF"/>
+        <text x="42" y="26" fill="#DDE3F7" font-size="13" font-weight="750" letter-spacing="0.9">INTENT &#8594; VERIFIED OUTCOME</text>
+      </g>
+      <path d="M64 188 H1536" stroke="#FFFFFF" stroke-opacity="0.1"/>
+    </g>
+
+    <g aria-label="Main seven-step execution flow">
+      <path d="M248 340 H264" fill="none" stroke="url(#flow)" stroke-width="3" stroke-linecap="round" marker-end="url(#arrow)"/>
+      <path d="M457 340 H473" fill="none" stroke="url(#flow)" stroke-width="3" stroke-linecap="round" marker-end="url(#arrow)"/>
+      <path d="M666 340 H682" fill="none" stroke="url(#flow)" stroke-width="3" stroke-linecap="round" marker-end="url(#arrow)"/>
+      <path d="M875 340 H891" fill="none" stroke="url(#flow)" stroke-width="3" stroke-linecap="round" marker-end="url(#arrow)"/>
+      <path d="M1084 340 H1100" fill="none" stroke="url(#flow)" stroke-width="3" stroke-linecap="round" marker-end="url(#arrow)"/>
+      <path d="M1293 340 H1309" fill="none" stroke="url(#flow)" stroke-width="3" stroke-linecap="round" marker-end="url(#arrow)"/>
+
+      <g transform="translate(64 235)" filter="url(#shadow)" aria-label="Step 1: Voice or text">
+        <rect width="184" height="210" rx="18" fill="url(#card)" stroke="#9B5CFF" stroke-opacity="0.68"/>
+        <path d="M18 1 H166" stroke="url(#flow)" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="28" cy="38" r="15" fill="#9B5CFF"/>
+        <text x="28" y="38" class="step-number">01</text>
+        <text x="53" y="42" class="stage">INPUT</text>
+        <text x="20" y="91" class="step-title">Voice / Text</text>
+        <text x="20" y="135" class="step-copy">Express the goal</text>
+        <text x="20" y="158" class="step-copy">in your own words.</text>
+        <g transform="translate(20 181)">
+          <path d="M0 7 H50" stroke="#4B7BFF" stroke-width="2" stroke-linecap="round"/>
+          <circle cx="58" cy="7" r="3" fill="#9B5CFF"/>
+          <circle cx="70" cy="7" r="3" fill="#4B7BFF"/>
+        </g>
+      </g>
+
+      <g transform="translate(273 235)" filter="url(#shadow)" aria-label="Step 2: Contract">
+        <rect width="184" height="210" rx="18" fill="url(#card)" stroke="#8070F2" stroke-opacity="0.62"/>
+        <path d="M18 1 H166" stroke="url(#flow)" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="28" cy="38" r="15" fill="#8D64F8"/>
+        <text x="28" y="38" class="step-number">02</text>
+        <text x="53" y="42" class="stage">SPEC</text>
+        <text x="20" y="91" class="step-title">Contract</text>
+        <text x="20" y="135" class="step-copy">Turn intent into</text>
+        <text x="20" y="158" class="step-copy">an explicit contract.</text>
+        <g transform="translate(20 179)" fill="none" stroke="#7E77FF" stroke-width="2">
+          <rect width="46" height="12" rx="6"/>
+          <path d="M56 6 H105" stroke-linecap="round"/>
+        </g>
+      </g>
+
+      <g transform="translate(482 235)" filter="url(#shadow)" aria-label="Step 3: Plan">
+        <rect width="184" height="210" rx="18" fill="url(#card)" stroke="#716FEB" stroke-opacity="0.62"/>
+        <path d="M18 1 H166" stroke="url(#flow)" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="28" cy="38" r="15" fill="#7D69F4"/>
+        <text x="28" y="38" class="step-number">03</text>
+        <text x="53" y="42" class="stage">ORCHESTRATE</text>
+        <text x="20" y="91" class="step-title">Plan</text>
+        <text x="20" y="135" class="step-copy">Create an ordered,</text>
+        <text x="20" y="158" class="step-copy">inspectable plan.</text>
+        <g transform="translate(20 177)">
+          <circle cx="5" cy="5" r="4" fill="#9B5CFF"/>
+          <path d="M15 5 H45 M52 5 H81 M88 5 H118" stroke="#677FFF" stroke-width="2" stroke-linecap="round"/>
+        </g>
+      </g>
+
+      <g transform="translate(691 235)" filter="url(#shadow)" aria-label="Step 4: Guardrails">
+        <rect width="184" height="210" rx="18" fill="url(#card)" stroke="#6474EE" stroke-opacity="0.62"/>
+        <path d="M18 1 H166" stroke="url(#flow)" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="28" cy="38" r="15" fill="#716EF1"/>
+        <text x="28" y="38" class="step-number">04</text>
+        <text x="53" y="42" class="stage">POLICY</text>
+        <text x="20" y="91" class="step-title">Guardrails</text>
+        <text x="20" y="135" class="step-copy">Check scope, risk</text>
+        <text x="20" y="158" class="step-copy">and hard limits.</text>
+        <g transform="translate(20 177)" fill="none" stroke="#667DFF" stroke-width="2">
+          <path d="M8 0 L16 4 V11 C16 17 12 21 8 23 C4 21 0 17 0 11 V4 Z"/>
+          <path d="M28 11 H91" stroke-linecap="round"/>
+        </g>
+      </g>
+
+      <g transform="translate(900 235)" filter="url(#shadow)" aria-label="Step 5: Exact approval">
+        <rect width="184" height="210" rx="18" fill="url(#card)" stroke="#5878F2" stroke-opacity="0.66"/>
+        <path d="M18 1 H166" stroke="url(#flow)" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="28" cy="38" r="15" fill="#6474F1"/>
+        <text x="28" y="38" class="step-number">05</text>
+        <text x="53" y="42" class="stage">AUTHORITY</text>
+        <text x="20" y="84" class="step-title">Exact</text>
+        <text x="20" y="111" class="step-title">approval</text>
+        <text x="20" y="147" class="step-copy">Approve precisely</text>
+        <text x="20" y="170" class="step-copy">what will happen.</text>
+        <g transform="translate(20 187)">
+          <circle cx="6" cy="6" r="6" fill="none" stroke="#617CFF" stroke-width="2"/>
+          <path d="M3 6 L5.5 8.5 L10 3.5 M20 6 H85" fill="none" stroke="#7C71FF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </g>
+      </g>
+
+      <g transform="translate(1109 235)" filter="url(#shadow)" aria-label="Step 6: FundingGate">
+        <rect width="184" height="210" rx="18" fill="url(#card)" stroke="#4B7BFF" stroke-opacity="0.7"/>
+        <path d="M18 1 H166" stroke="url(#flow)" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="28" cy="38" r="15" fill="#5678F8"/>
+        <text x="28" y="38" class="step-number">06</text>
+        <text x="53" y="42" class="stage">CONTROL</text>
+        <text x="20" y="91" class="step-title" font-size="21">FundingGate</text>
+        <text x="20" y="135" class="step-copy">Verify exact scope</text>
+        <text x="20" y="158" class="step-copy">before execution.</text>
+        <g transform="translate(20 178)" fill="none" stroke="#4B7BFF" stroke-width="2">
+          <rect width="25" height="16" rx="4"/>
+          <path d="M8 8 H17 M37 8 H100" stroke-linecap="round"/>
+        </g>
+      </g>
+
+      <g transform="translate(1318 235)" filter="url(#shadow)" aria-label="Step 7: Done">
+        <rect width="184" height="210" rx="18" fill="url(#doneCard)" stroke="#42E6A4" stroke-opacity="0.92" stroke-width="1.5"/>
+        <path d="M18 1 H166" stroke="#42E6A4" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="28" cy="38" r="15" fill="#22C98A"/>
+        <text x="28" y="38" class="step-number">07</text>
+        <text x="53" y="42" class="stage" fill="#8CEBC6">OUTCOME</text>
+        <text x="20" y="91" fill="#42E6A4" font-size="27" font-weight="800" letter-spacing="-0.5">Done</text>
+        <text x="20" y="135" class="step-copy">Execute, verify,</text>
+        <text x="20" y="158" class="step-copy">and close the loop.</text>
+        <g transform="translate(20 178)">
+          <circle cx="9" cy="9" r="9" fill="#42E6A4" fill-opacity="0.14" stroke="#42E6A4"/>
+          <path d="M5 9 L8 12 L14 6" fill="none" stroke="#42E6A4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M29 9 H102" stroke="#42E6A4" stroke-width="2" stroke-linecap="round"/>
+        </g>
+      </g>
+    </g>
+
+    <g aria-label="Safety branches">
+      <text x="64" y="505" class="branch-kicker">SAFETY PATHS</text>
+      <path d="M178 500 H1536" stroke="#FFFFFF" stroke-opacity="0.08"/>
+
+      <path d="M365 445 V503 Q365 530 392 530 H480 V552" fill="none" stroke="#9B5CFF" stroke-opacity="0.82" stroke-width="2" stroke-dasharray="6 7" stroke-linecap="round" marker-end="url(#arrowSmall)"/>
+      <g transform="translate(388 493)">
+        <rect width="117" height="24" rx="12" fill="#14182B" stroke="#9B5CFF" stroke-opacity="0.42"/>
+        <text x="58.5" y="16" fill="#C8B1FF" font-size="10" font-weight="800" letter-spacing="1.1" text-anchor="middle">UNCLEAR INTENT</text>
+      </g>
+
+      <path d="M992 445 V503 Q992 530 1019 530 H1105 V552" fill="none" stroke="#5C76FF" stroke-opacity="0.82" stroke-width="2" stroke-dasharray="6 7" stroke-linecap="round" marker-end="url(#arrowSmall)"/>
+      <g transform="translate(1009 493)">
+        <rect width="105" height="24" rx="12" fill="#14182B" stroke="#5C76FF" stroke-opacity="0.42"/>
+        <text x="52.5" y="16" fill="#B5C1FF" font-size="10" font-weight="800" letter-spacing="1.1" text-anchor="middle">NOT CERTAIN</text>
+      </g>
+
+      <g transform="translate(286 560)" filter="url(#softShadow)" aria-label="Ask, never guess safety branch">
+        <rect width="390" height="124" rx="18" fill="#111528" stroke="#9B5CFF" stroke-opacity="0.62"/>
+        <rect x="20" y="23" width="50" height="50" rx="14" fill="#9B5CFF" fill-opacity="0.14" stroke="#9B5CFF" stroke-opacity="0.75"/>
+        <text x="45" y="56" fill="#CDB7FF" font-size="24" font-weight="800" text-anchor="middle">?</text>
+        <text x="90" y="34" class="branch-kicker" fill="#C8B1FF">CLARIFY</text>
+        <text x="90" y="62" class="branch-title">Ask, never guess</text>
+        <text x="90" y="90" class="branch-copy">Resolve ambiguity before the plan advances.</text>
+        <path d="M90 105 H350" stroke="#9B5CFF" stroke-opacity="0.35" stroke-width="2" stroke-linecap="round"/>
+      </g>
+
+      <g transform="translate(910 560)" filter="url(#softShadow)" aria-label="Fail closed safety branch">
+        <rect width="410" height="124" rx="18" fill="#111528" stroke="#4B7BFF" stroke-opacity="0.62"/>
+        <rect x="20" y="23" width="50" height="50" rx="14" fill="#4B7BFF" fill-opacity="0.14" stroke="#4B7BFF" stroke-opacity="0.75"/>
+        <path d="M34 38 L56 60 M56 38 L34 60" stroke="#AFC0FF" stroke-width="3" stroke-linecap="round"/>
+        <text x="90" y="34" class="branch-kicker" fill="#B5C1FF">STOP SAFELY</text>
+        <text x="90" y="62" class="branch-title">Fail closed</text>
+        <text x="90" y="90" class="branch-copy">No exact approval or funds means no action.</text>
+        <path d="M90 105 H370" stroke="#4B7BFF" stroke-opacity="0.35" stroke-width="2" stroke-linecap="round"/>
+      </g>
+
+      <g transform="translate(1370 575)">
+        <text x="0" y="0" fill="#7782A7" font-size="11" font-weight="750" letter-spacing="1.35">DEFAULT POSTURE</text>
+        <text x="0" y="30" fill="#FFFFFF" font-size="17" font-weight="720">Explicit.</text>
+        <text x="0" y="54" fill="#FFFFFF" font-size="17" font-weight="720">Auditable.</text>
+        <text x="0" y="78" fill="#FFFFFF" font-size="17" font-weight="720">Controlled.</text>
+      </g>
+    </g>
+  </g>
+</svg>

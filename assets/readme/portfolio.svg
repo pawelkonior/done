@@ -1,0 +1,202 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="650" viewBox="0 0 1600 650" role="img" aria-labelledby="portfolio-title portfolio-desc">
+  <title id="portfolio-title">Done portfolio decision pipeline</title>
+  <desc id="portfolio-desc">A portfolio snapshot becomes normalized signals, passes a timing gate, is optimized by CP-SAT, and is post-validated before producing buy, wait, fail, or shadow outcomes.</desc>
+  <defs>
+    <linearGradient id="port-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#07101f"/>
+      <stop offset="0.58" stop-color="#0a1329"/>
+      <stop offset="1" stop-color="#141038"/>
+    </linearGradient>
+    <linearGradient id="port-line" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#3b82f6"/>
+      <stop offset="1" stop-color="#8b5cf6"/>
+    </linearGradient>
+    <linearGradient id="port-card" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#111f3a"/>
+      <stop offset="1" stop-color="#101a34"/>
+    </linearGradient>
+    <pattern id="port-grid" width="36" height="36" patternUnits="userSpaceOnUse">
+      <path d="M36 0 H0 V36" fill="none" stroke="#8ea2c6" stroke-opacity="0.05"/>
+    </pattern>
+    <filter id="port-shadow" x="-25%" y="-25%" width="150%" height="160%">
+      <feDropShadow dx="0" dy="12" stdDeviation="15" flood-color="#020617" flood-opacity="0.5"/>
+    </filter>
+    <filter id="port-glow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <marker id="port-arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M1 1 L11 6 L1 11 Z" fill="#60a5fa"/>
+    </marker>
+    <marker id="port-arrow-violet" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M1 1 L11 6 L1 11 Z" fill="#a78bfa"/>
+    </marker>
+    <style>
+      .port-kicker { font: 700 13px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; letter-spacing: 2.1px; }
+      .port-title { font: 750 35px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+      .port-subtitle { font: 400 17px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+      .port-step { font: 750 12px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; letter-spacing: 1.5px; }
+      .port-card-title { font: 700 19px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+      .port-copy { font: 400 13.5px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+      .port-micro { font: 650 11.5px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; letter-spacing: 0.5px; }
+      .port-outcome { font: 750 15px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; letter-spacing: 0.7px; }
+      .port-flow { fill: none; stroke: #60a5fa; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#port-arrow); }
+      .port-flow-violet { fill: none; stroke: #a78bfa; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#port-arrow-violet); }
+    </style>
+  </defs>
+
+  <rect width="1600" height="650" rx="28" fill="url(#port-bg)"/>
+  <rect width="1600" height="650" rx="28" fill="url(#port-grid)"/>
+  <circle cx="1432" cy="67" r="235" fill="#7c3aed" opacity="0.065"/>
+  <path d="M0 650 H820 C540 555 445 340 500 0 H0 Z" fill="#2563eb" opacity="0.04"/>
+
+  <text x="54" y="45" class="port-kicker" fill="#7dd3fc">DONE · PORTFOLIO ENGINE</text>
+  <text id="portfolio-heading" x="54" y="85" class="port-title" fill="#f8fafc">From market state to an explainable action.</text>
+  <text x="54" y="113" class="port-subtitle" fill="#9fb0cd">Every candidate crosses the same deterministic gates — no opaque jump from signal to spend.</text>
+  <g transform="translate(1324 40)">
+    <rect width="222" height="34" rx="17" fill="#111d36" stroke="#344a71"/>
+    <circle cx="20" cy="17" r="4" fill="#60a5fa" filter="url(#port-glow)"/>
+    <text x="34" y="22" class="port-micro" fill="#c8d5ed">DECISION PIPELINE · v1</text>
+  </g>
+
+  <path d="M76 296 H1210" stroke="url(#port-line)" stroke-width="4" stroke-linecap="round" opacity="0.18"/>
+
+  <g transform="translate(50 172)" filter="url(#port-shadow)">
+    <rect width="202" height="248" rx="22" fill="url(#port-card)" stroke="#2c4770"/>
+    <rect x="1" y="1" width="200" height="5" rx="2.5" fill="#3b82f6"/>
+    <circle cx="30" cy="35" r="16" fill="#172e54" stroke="#3b82f6"/>
+    <text x="26" y="40" class="port-step" fill="#bfdbfe">1</text>
+    <text x="56" y="40" class="port-step" fill="#7e94b7">CAPTURE</text>
+    <text x="24" y="86" class="port-card-title" fill="#f2f7ff">Snapshot</text>
+    <text x="24" y="113" class="port-copy" fill="#91a5c7">offers · stock</text>
+    <text x="24" y="135" class="port-copy" fill="#91a5c7">prices · delivery</text>
+    <path d="M24 159 H178" stroke="#253a5c"/>
+    <rect x="24" y="179" width="65" height="27" rx="13.5" fill="#142743"/>
+    <text x="38" y="197" class="port-micro" fill="#8fb7ed">ATOMIC</text>
+    <rect x="98" y="179" width="79" height="27" rx="13.5" fill="#142743"/>
+    <text x="112" y="197" class="port-micro" fill="#8fb7ed">VERSIONED</text>
+    <text x="24" y="230" class="port-micro" fill="#60779e">PORTFOLIO T₀</text>
+  </g>
+
+  <path d="M252 296 H278" class="port-flow"/>
+
+  <g transform="translate(280 172)" filter="url(#port-shadow)">
+    <rect width="178" height="248" rx="22" fill="url(#port-card)" stroke="#304b76"/>
+    <rect x="1" y="1" width="176" height="5" rx="2.5" fill="#4f8df7"/>
+    <circle cx="30" cy="35" r="16" fill="#172e54" stroke="#4f8df7"/>
+    <text x="26" y="40" class="port-step" fill="#bfdbfe">2</text>
+    <text x="56" y="40" class="port-step" fill="#7e94b7">DERIVE</text>
+    <text x="24" y="86" class="port-card-title" fill="#f2f7ff">Signals</text>
+    <text x="24" y="113" class="port-copy" fill="#91a5c7">price forecast · risk</text>
+    <text x="24" y="135" class="port-copy" fill="#91a5c7">LPTB · quality</text>
+    <path d="M24 159 H154" stroke="#253a5c"/>
+    <text x="24" y="190" class="port-micro" fill="#8fb7ed">NORMALIZED</text>
+    <text x="24" y="214" class="port-micro" fill="#60779e">TRACEABLE INPUTS</text>
+  </g>
+
+  <path d="M458 296 H484" class="port-flow"/>
+
+  <g transform="translate(486 172)" filter="url(#port-shadow)">
+    <rect width="190" height="248" rx="22" fill="url(#port-card)" stroke="#374b79"/>
+    <rect x="1" y="1" width="188" height="5" rx="2.5" fill="#647ff4"/>
+    <circle cx="30" cy="35" r="16" fill="#1c2952" stroke="#647ff4"/>
+    <text x="26" y="40" class="port-step" fill="#dbeafe">3</text>
+    <text x="56" y="40" class="port-step" fill="#8c91ba">GATE</text>
+    <text x="24" y="86" class="port-card-title" fill="#f4f4ff">TimingGate</text>
+    <text x="24" y="113" class="port-copy" fill="#9ca3c7">deadline · LPTB</text>
+    <text x="24" y="135" class="port-copy" fill="#9ca3c7">orange mode · freshness</text>
+    <path d="M24 159 H166" stroke="#2b365d"/>
+    <rect x="24" y="180" width="142" height="27" rx="13.5" fill="#1b2147" stroke="#3e4775"/>
+    <text x="39" y="198" class="port-micro" fill="#b8c1f0">ALLOW / DEFER</text>
+    <text x="24" y="230" class="port-micro" fill="#6f739d">ZERO GUESSWORK</text>
+  </g>
+
+  <path d="M676 296 H702" class="port-flow-violet"/>
+
+  <g transform="translate(704 172)" filter="url(#port-shadow)">
+    <rect width="190" height="248" rx="22" fill="#151c3a" stroke="#59478a"/>
+    <rect x="1" y="1" width="188" height="5" rx="2.5" fill="#8b5cf6"/>
+    <circle cx="30" cy="35" r="16" fill="#251d48" stroke="#8b5cf6"/>
+    <text x="26" y="40" class="port-step" fill="#e9d5ff">4</text>
+    <text x="56" y="40" class="port-step" fill="#9f8fc8">SOLVE</text>
+    <text x="24" y="86" class="port-card-title" fill="#f7f2ff">CP-SAT</text>
+    <text x="24" y="113" class="port-copy" fill="#a69ac8">coverage · merchant</text>
+    <text x="24" y="135" class="port-copy" fill="#a69ac8">budget · feasibility</text>
+    <path d="M24 159 H166" stroke="#382e62"/>
+    <rect x="24" y="180" width="142" height="27" rx="13.5" fill="#251d48"/>
+    <text x="39" y="198" class="port-micro" fill="#c4b5fd">FEASIBLE PLAN</text>
+    <text x="24" y="230" class="port-micro" fill="#8173ab">HARD CONSTRAINTS</text>
+  </g>
+
+  <path d="M894 296 H920" class="port-flow-violet"/>
+
+  <g transform="translate(922 172)" filter="url(#port-shadow)">
+    <rect width="230" height="248" rx="22" fill="#151c3a" stroke="#5c488c"/>
+    <rect x="1" y="1" width="228" height="5" rx="2.5" fill="#9b64f6"/>
+    <circle cx="30" cy="35" r="16" fill="#251d48" stroke="#9b64f6"/>
+    <text x="26" y="40" class="port-step" fill="#f3e8ff">5</text>
+    <text x="56" y="40" class="port-step" fill="#a592d1">VERIFY</text>
+    <text x="24" y="86" class="port-card-title" fill="#f7f2ff">Post-validation</text>
+    <text x="24" y="113" class="port-copy" fill="#aa9dcc">coverage · stock</text>
+    <text x="24" y="135" class="port-copy" fill="#aa9dcc">budget · invariants</text>
+    <path d="M24 159 H206" stroke="#3a3064"/>
+    <rect x="24" y="180" width="182" height="27" rx="13.5" fill="#251d48"/>
+    <text x="39" y="198" class="port-micro" fill="#d0c1f3">PROVE BEFORE ACTION</text>
+    <text x="24" y="230" class="port-micro" fill="#8677b2">FRESH STATE REQUIRED</text>
+  </g>
+
+  <path d="M1152 296 H1196" class="port-flow-violet"/>
+  <circle cx="1208" cy="296" r="9" fill="#a78bfa" stroke="#ddd6fe" stroke-width="2" filter="url(#port-glow)"/>
+  <path d="M1208 296 H1228 M1208 296 V224 H1228 M1208 296 V368 H1228 M1208 296 V440 H1228" fill="none" stroke="#7c6bb0" stroke-width="2.2" stroke-linecap="round"/>
+
+  <g transform="translate(1228 150)" filter="url(#port-shadow)">
+    <rect width="322" height="350" rx="24" fill="#0d1830" stroke="#4b3d79"/>
+    <text x="24" y="39" class="port-step" fill="#8f7cc4">6 · EXPLAINABLE OUTCOME</text>
+    <g transform="translate(24 58)">
+      <rect width="274" height="62" rx="15" fill="#0d2a2a" stroke="#2dd4a3"/>
+      <circle cx="28" cy="31" r="10" fill="#2dd4a3" opacity="0.18"/>
+      <path d="M23 31 L27 35 L34 27" fill="none" stroke="#5ee6bd" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="50" y="28" class="port-outcome" fill="#a7f3d0">BUY</text>
+      <text x="50" y="47" class="port-copy" fill="#77bba8">approved plan · executable</text>
+      <text x="236" y="37" class="port-step" fill="#5ee6bd">01</text>
+    </g>
+    <g transform="translate(24 132)">
+      <rect width="274" height="54" rx="15" fill="#211b42" stroke="#8b5cf6"/>
+      <circle cx="28" cy="27" r="4" fill="#a78bfa"/>
+      <text x="50" y="25" class="port-outcome" fill="#ddd6fe">WAIT</text>
+      <text x="50" y="43" class="port-copy" fill="#a99bce">valid idea · wrong moment</text>
+    </g>
+    <g transform="translate(24 198)">
+      <rect width="274" height="54" rx="15" fill="#2b1725" stroke="#e05278"/>
+      <circle cx="28" cy="27" r="4" fill="#fb7185"/>
+      <text x="50" y="25" class="port-outcome" fill="#fecdd3">FAIL</text>
+      <text x="50" y="43" class="port-copy" fill="#c48c9c">invariant or feasibility breach</text>
+    </g>
+    <g transform="translate(24 264)">
+      <rect width="274" height="54" rx="15" fill="#132542" stroke="#3b82f6"/>
+      <circle cx="28" cy="27" r="4" fill="#60a5fa"/>
+      <text x="50" y="25" class="port-outcome" fill="#bfdbfe">SHADOW</text>
+      <text x="50" y="43" class="port-copy" fill="#8eacd2">observe only · no side effects</text>
+    </g>
+  </g>
+
+  <g transform="translate(50 475)">
+    <rect width="1102" height="116" rx="20" fill="#0b172c" stroke="#233959"/>
+    <text x="24" y="31" class="port-step" fill="#7185a9">WHY THE PIPELINE STAYS EXPLAINABLE</text>
+    <g transform="translate(24 49)">
+      <rect width="318" height="43" rx="12" fill="#101f38"/>
+      <text x="16" y="19" class="port-micro" fill="#93c5fd">01 · REPLAYABLE</text>
+      <text x="16" y="35" class="port-copy" fill="#7f95b7">same snapshot, same decision</text>
+    </g>
+    <g transform="translate(366 49)">
+      <rect width="318" height="43" rx="12" fill="#151d3a"/>
+      <text x="16" y="19" class="port-micro" fill="#c4b5fd">02 · CONSTRAINED</text>
+      <text x="16" y="35" class="port-copy" fill="#9588bc">hard limits beat hopeful scoring</text>
+    </g>
+    <g transform="translate(708 49)">
+      <rect width="346" height="43" rx="12" fill="#101f38"/>
+      <text x="16" y="19" class="port-micro" fill="#93c5fd">03 · AUDITABLE</text>
+      <text x="16" y="35" class="port-copy" fill="#7f95b7">every branch carries a reason code</text>
+    </g>
+  </g>
+</svg>

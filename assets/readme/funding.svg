@@ -1,0 +1,208 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="700" viewBox="0 0 1600 700" role="img" aria-labelledby="funding-title funding-desc">
+  <title id="funding-title">Done approval-bound funding workflow</title>
+  <desc id="funding-desc">An exact approval is revalidated, price and stock are reserved, and three fingerprints are matched before a restricted card specification reaches simulated checkout. Any mismatch is denied and produces a scoped action request.</desc>
+  <defs>
+    <linearGradient id="fund-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#07101f"/>
+      <stop offset="0.55" stop-color="#0a1329"/>
+      <stop offset="1" stop-color="#151039"/>
+    </linearGradient>
+    <linearGradient id="fund-main" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#3b82f6"/>
+      <stop offset="1" stop-color="#8b5cf6"/>
+    </linearGradient>
+    <linearGradient id="fund-deny" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ef476f"/>
+      <stop offset="1" stop-color="#8b5cf6"/>
+    </linearGradient>
+    <pattern id="fund-grid" width="38" height="38" patternUnits="userSpaceOnUse">
+      <path d="M38 0 H0 V38" fill="none" stroke="#8ea2c6" stroke-opacity="0.05"/>
+    </pattern>
+    <filter id="fund-shadow" x="-25%" y="-25%" width="150%" height="160%">
+      <feDropShadow dx="0" dy="12" stdDeviation="15" flood-color="#020617" flood-opacity="0.5"/>
+    </filter>
+    <filter id="fund-glow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <marker id="fund-arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M1 1 L11 6 L1 11 Z" fill="#60a5fa"/>
+    </marker>
+    <marker id="fund-arrow-violet" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M1 1 L11 6 L1 11 Z" fill="#a78bfa"/>
+    </marker>
+    <marker id="fund-arrow-deny" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M1 1 L11 6 L1 11 Z" fill="#f05c85"/>
+    </marker>
+    <style>
+      .fund-kicker { font: 700 13px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; letter-spacing: 2.1px; }
+      .fund-title { font: 750 35px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+      .fund-subtitle { font: 400 17px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+      .fund-step { font: 750 11.5px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; letter-spacing: 1.25px; }
+      .fund-card-title { font: 700 18px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+      .fund-copy { font: 400 13px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+      .fund-micro { font: 650 11px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; letter-spacing: 0.45px; }
+      .fund-flow { fill: none; stroke: #60a5fa; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#fund-arrow); }
+      .fund-flow-violet { fill: none; stroke: #a78bfa; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#fund-arrow-violet); }
+      .fund-flow-deny { fill: none; stroke: #f05c85; stroke-width: 2.7; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#fund-arrow-deny); }
+      .fund-flow-return { fill: none; stroke: #9b6cf4; stroke-width: 2.2; stroke-dasharray: 7 8; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#fund-arrow-violet); }
+    </style>
+  </defs>
+
+  <rect width="1600" height="700" rx="28" fill="url(#fund-bg)"/>
+  <rect width="1600" height="700" rx="28" fill="url(#fund-grid)"/>
+  <circle cx="1440" cy="88" r="245" fill="#7c3aed" opacity="0.07"/>
+  <path d="M0 0 H640 C474 168 465 438 540 700 H0 Z" fill="#2563eb" opacity="0.04"/>
+
+  <text x="50" y="44" class="fund-kicker" fill="#7dd3fc">DONE · FUNDING CONTROL</text>
+  <text id="funding-heading" x="50" y="84" class="fund-title" fill="#f8fafc">Approval is an execution boundary — not a checkbox.</text>
+  <text x="50" y="112" class="fund-subtitle" fill="#9fb0cd">The executable scope must still match at the last responsible moment.</text>
+  <g transform="translate(1321 39)">
+    <rect width="229" height="34" rx="17" fill="#111d36" stroke="#344a71"/>
+    <circle cx="20" cy="17" r="4" fill="#60a5fa" filter="url(#fund-glow)"/>
+    <text x="34" y="22" class="fund-micro" fill="#c8d5ed">NO AMBIENT AUTHORITY</text>
+  </g>
+
+  <text x="50" y="161" class="fund-step" fill="#7185a9">APPROVED PATH</text>
+  <path d="M74 297 H1520" stroke="url(#fund-main)" stroke-width="4" stroke-linecap="round" opacity="0.16"/>
+
+  <g transform="translate(50 184)" filter="url(#fund-shadow)">
+    <rect width="194" height="226" rx="22" fill="#101f3a" stroke="#315381"/>
+    <rect x="1" y="1" width="192" height="5" rx="2.5" fill="#3b82f6"/>
+    <circle cx="27" cy="34" r="15" fill="#172e54" stroke="#3b82f6"/>
+    <text x="23" y="39" class="fund-step" fill="#bfdbfe">1</text>
+    <text x="51" y="39" class="fund-step" fill="#7e94b7">AUTHORIZE</text>
+    <text x="22" y="80" class="fund-card-title" fill="#f2f7ff">Exact approval</text>
+    <text x="22" y="108" class="fund-copy" fill="#91a5c7">amount · merchant</text>
+    <text x="22" y="130" class="fund-copy" fill="#91a5c7">items · expiry</text>
+    <path d="M22 151 H172" stroke="#294261"/>
+    <rect x="22" y="169" width="150" height="29" rx="14.5" fill="#142743"/>
+    <text x="39" y="188" class="fund-micro" fill="#93c5fd">SIGNED SCOPE</text>
+    <text x="22" y="216" class="fund-micro" fill="#60779e">APPROVAL ID</text>
+  </g>
+  <path d="M244 297 H269" class="fund-flow"/>
+
+  <g transform="translate(271 184)" filter="url(#fund-shadow)">
+    <rect width="184" height="226" rx="22" fill="#101f3a" stroke="#34527e"/>
+    <rect x="1" y="1" width="182" height="5" rx="2.5" fill="#4f8df7"/>
+    <circle cx="27" cy="34" r="15" fill="#172e54" stroke="#4f8df7"/>
+    <text x="23" y="39" class="fund-step" fill="#bfdbfe">2</text>
+    <text x="51" y="39" class="fund-step" fill="#7e94b7">REFRESH</text>
+    <text x="22" y="80" class="fund-card-title" fill="#f2f7ff">Revalidate</text>
+    <text x="22" y="108" class="fund-copy" fill="#91a5c7">price · stock</text>
+    <text x="22" y="130" class="fund-copy" fill="#91a5c7">policy · expiry</text>
+    <path d="M22 151 H162" stroke="#294261"/>
+    <text x="22" y="181" class="fund-micro" fill="#93c5fd">FRESH READS ONLY</text>
+    <text x="22" y="205" class="fund-micro" fill="#60779e">FAIL CLOSED</text>
+  </g>
+  <path d="M455 297 H480" class="fund-flow"/>
+
+  <g transform="translate(482 184)" filter="url(#fund-shadow)">
+    <rect width="184" height="226" rx="22" fill="#111e39" stroke="#3c507d"/>
+    <rect x="1" y="1" width="182" height="5" rx="2.5" fill="#647ff4"/>
+    <circle cx="27" cy="34" r="15" fill="#1c2952" stroke="#647ff4"/>
+    <text x="23" y="39" class="fund-step" fill="#dbeafe">3</text>
+    <text x="51" y="39" class="fund-step" fill="#8d91ba">LOCK</text>
+    <text x="22" y="80" class="fund-card-title" fill="#f4f4ff">Reserve</text>
+    <text x="22" y="108" class="fund-copy" fill="#9ca3c7">price · stock</text>
+    <text x="22" y="130" class="fund-copy" fill="#9ca3c7">idempotency key</text>
+    <path d="M22 151 H162" stroke="#2b365d"/>
+    <rect x="22" y="169" width="140" height="29" rx="14.5" fill="#1b2147"/>
+    <text x="38" y="188" class="fund-micro" fill="#bdc4ef">ONE RESERVE</text>
+    <text x="22" y="216" class="fund-micro" fill="#6f739d">NO DUPLICATE ATTEMPT</text>
+  </g>
+  <path d="M666 297 H691" class="fund-flow-violet"/>
+
+  <g transform="translate(693 184)" filter="url(#fund-shadow)">
+    <rect width="260" height="226" rx="22" fill="#171d3e" stroke="#654f9b"/>
+    <rect x="1" y="1" width="258" height="5" rx="2.5" fill="#8b5cf6"/>
+    <circle cx="27" cy="34" r="15" fill="#251d48" stroke="#8b5cf6"/>
+    <text x="23" y="39" class="fund-step" fill="#e9d5ff">4</text>
+    <text x="51" y="39" class="fund-step" fill="#a08fc9">PROVE</text>
+    <text x="22" y="79" class="fund-card-title" fill="#f7f2ff">Triple fingerprint gate</text>
+    <g transform="translate(22 96)">
+      <rect width="216" height="29" rx="9" fill="#211c43" stroke="#44396f"/>
+      <circle cx="16" cy="14.5" r="4" fill="#8b5cf6"/>
+      <text x="30" y="19" class="fund-micro" fill="#c9baf0">GUARDRAIL FP</text>
+      <text x="171" y="19" class="fund-micro" fill="#8e80b6">MATCH</text>
+    </g>
+    <g transform="translate(22 132)">
+      <rect width="216" height="29" rx="9" fill="#211c43" stroke="#44396f"/>
+      <circle cx="16" cy="14.5" r="4" fill="#8b5cf6"/>
+      <text x="30" y="19" class="fund-micro" fill="#c9baf0">APPROVAL FP</text>
+      <text x="171" y="19" class="fund-micro" fill="#8e80b6">MATCH</text>
+    </g>
+    <g transform="translate(22 168)">
+      <rect width="216" height="29" rx="9" fill="#211c43" stroke="#44396f"/>
+      <circle cx="16" cy="14.5" r="4" fill="#8b5cf6"/>
+      <text x="30" y="19" class="fund-micro" fill="#c9baf0">RESERVATION FP</text>
+      <text x="171" y="19" class="fund-micro" fill="#8e80b6">MATCH</text>
+    </g>
+    <text x="22" y="216" class="fund-micro" fill="#8677b2">ALL THREE OR STOP</text>
+  </g>
+  <path d="M953 297 H978" class="fund-flow-violet"/>
+
+  <g transform="translate(980 184)" filter="url(#fund-shadow)">
+    <rect width="220" height="226" rx="22" fill="#161d3b" stroke="#5e4a90"/>
+    <rect x="1" y="1" width="218" height="5" rx="2.5" fill="#9662f5"/>
+    <circle cx="27" cy="34" r="15" fill="#251d48" stroke="#9662f5"/>
+    <text x="23" y="39" class="fund-step" fill="#f3e8ff">5</text>
+    <text x="51" y="39" class="fund-step" fill="#a592d1">ISSUE</text>
+    <text x="22" y="80" class="fund-card-title" fill="#f7f2ff">Restricted card</text>
+    <text x="22" y="103" class="fund-card-title" fill="#f7f2ff">specification</text>
+    <text x="22" y="132" class="fund-copy" fill="#aa9dcc">exact ceiling · vendor</text>
+    <text x="22" y="153" class="fund-copy" fill="#aa9dcc">single use · short TTL</text>
+    <path d="M22 170 H198" stroke="#3a3064"/>
+    <text x="22" y="197" class="fund-micro" fill="#c4b5fd">LEAST AUTHORITY</text>
+    <text x="22" y="216" class="fund-micro" fill="#8677b2">NO OPEN BALANCE</text>
+  </g>
+  <path d="M1200 297 H1225" class="fund-flow-violet"/>
+
+  <g transform="translate(1227 184)" filter="url(#fund-shadow)">
+    <rect width="323" height="226" rx="22" fill="#0d2529" stroke="#2dd4a3"/>
+    <rect x="1" y="1" width="321" height="5" rx="2.5" fill="#2dd4a3"/>
+    <circle cx="27" cy="34" r="15" fill="#113c37" stroke="#2dd4a3"/>
+    <path d="M21 34 L25 38 L33 29" fill="none" stroke="#a7f3d0" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="51" y="39" class="fund-step" fill="#7edec3">6 · SIMULATE</text>
+    <text x="22" y="80" class="fund-card-title" fill="#ecfdf5">Simulated checkout</text>
+    <text x="22" y="109" class="fund-copy" fill="#82b9aa">final payload · receipt preview</text>
+    <text x="22" y="131" class="fund-copy" fill="#82b9aa">reserve reconciliation</text>
+    <rect x="22" y="153" width="279" height="43" rx="13" fill="#10332f" stroke="#237e69"/>
+    <circle cx="43" cy="174.5" r="5" fill="#2dd4a3" filter="url(#fund-glow)"/>
+    <text x="59" y="179" class="fund-step" fill="#a7f3d0">SUCCESS · NO REAL CHARGE</text>
+    <text x="22" y="216" class="fund-micro" fill="#579b89">AUDIT RECEIPT EMITTED</text>
+  </g>
+
+  <text x="50" y="462" class="fund-step" fill="#b56b92">MISMATCH PATH</text>
+  <path d="M823 410 V470 H683 V489" class="fund-flow-deny"/>
+  <text x="838" y="451" class="fund-micro" fill="#ef87a6">ANY FP DIFFERS</text>
+
+  <g transform="translate(586 491)" filter="url(#fund-shadow)">
+    <rect width="194" height="88" rx="19" fill="#2b1725" stroke="#ef476f"/>
+    <circle cx="31" cy="31" r="12" fill="#481a2c" stroke="#ef476f"/>
+    <path d="M26 26 L36 36 M36 26 L26 36" stroke="#fecdd3" stroke-width="2.2" stroke-linecap="round"/>
+    <text x="53" y="36" class="fund-card-title" fill="#ffe4e6">DENY</text>
+    <text x="22" y="65" class="fund-copy" fill="#d49bab">release reserve · log diff</text>
+  </g>
+  <path d="M780 535 H809" class="fund-flow-deny"/>
+  <g transform="translate(811 491)" filter="url(#fund-shadow)">
+    <rect width="326" height="88" rx="19" fill="#211943" stroke="#8b5cf6"/>
+    <rect x="20" y="19" width="40" height="40" rx="12" fill="#2b2052" stroke="#8b5cf6"/>
+    <path d="M31 31 H49 M31 39 H45 M31 47 H41" fill="none" stroke="#ddd6fe" stroke-width="2" stroke-linecap="round"/>
+    <text x="76" y="35" class="fund-card-title" fill="#f5f3ff">Action request</text>
+    <text x="76" y="59" class="fund-copy" fill="#b4a6d7">show the delta · request new scope</text>
+  </g>
+  <path d="M974 579 V631 H147 V418" class="fund-flow-return"/>
+  <text x="430" y="650" class="fund-micro" fill="#9f8acb">A NEW EXACT APPROVAL IS REQUIRED — THE OLD AUTHORITY IS NEVER STRETCHED</text>
+
+  <g transform="translate(1184 482)">
+    <rect width="366" height="113" rx="20" fill="#0b172c" stroke="#263c5e"/>
+    <text x="22" y="29" class="fund-step" fill="#7185a9">CONTROL INVARIANTS</text>
+    <circle cx="24" cy="53" r="4" fill="#60a5fa"/>
+    <text x="38" y="58" class="fund-copy" fill="#93a8c9">reserve is released on every deny</text>
+    <circle cx="24" cy="80" r="4" fill="#a78bfa"/>
+    <text x="38" y="85" class="fund-copy" fill="#a99bce">reason codes survive retries</text>
+    <circle cx="24" cy="101" r="4" fill="#64748b"/>
+    <text x="38" y="106" class="fund-copy" fill="#8fa0ba">checkout remains simulated</text>
+  </g>
+</svg>

@@ -1,0 +1,195 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="760" viewBox="0 0 1600 760" role="img" aria-labelledby="architecture-title architecture-desc">
+  <title id="architecture-title">Done enterprise reference architecture</title>
+  <desc id="architecture-desc">Client surfaces connect through a FastAPI gateway to application, domain, and workflow services. The core persists state in SQLite, integrates with commerce adapters, and can optionally use OpenAI.</desc>
+  <defs>
+    <linearGradient id="arch-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#07101f"/>
+      <stop offset="0.55" stop-color="#0a1228"/>
+      <stop offset="1" stop-color="#111035"/>
+    </linearGradient>
+    <linearGradient id="arch-accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#3b82f6"/>
+      <stop offset="1" stop-color="#8b5cf6"/>
+    </linearGradient>
+    <linearGradient id="arch-violet" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7c3aed" stop-opacity="0.34"/>
+      <stop offset="1" stop-color="#2563eb" stop-opacity="0.1"/>
+    </linearGradient>
+    <pattern id="arch-grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#93a4c7" stroke-opacity="0.055" stroke-width="1"/>
+    </pattern>
+    <filter id="arch-shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#020617" flood-opacity="0.48"/>
+    </filter>
+    <filter id="arch-glow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <marker id="arch-arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M1 1 L11 6 L1 11 Z" fill="#60a5fa"/>
+    </marker>
+    <marker id="arch-arrow-violet" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M1 1 L11 6 L1 11 Z" fill="#a78bfa"/>
+    </marker>
+    <style>
+      .arch-kicker { font: 700 13px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; letter-spacing: 2.1px; }
+      .arch-title { font: 750 36px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+      .arch-subtitle { font: 400 17px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+      .arch-label { font: 700 12px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; letter-spacing: 1.8px; }
+      .arch-card-title { font: 700 20px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+      .arch-copy { font: 400 14px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+      .arch-micro { font: 600 12px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+      .arch-flow { fill: none; stroke: #60a5fa; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arch-arrow); }
+      .arch-flow-violet { fill: none; stroke: #a78bfa; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arch-arrow-violet); }
+      .arch-flow-optional { fill: none; stroke: #a78bfa; stroke-width: 2.2; stroke-dasharray: 7 8; stroke-linecap: round; marker-end: url(#arch-arrow-violet); }
+    </style>
+  </defs>
+
+  <rect width="1600" height="760" rx="28" fill="url(#arch-bg)"/>
+  <rect width="1600" height="760" rx="28" fill="url(#arch-grid)"/>
+  <path d="M0 0 H670 C470 150 430 440 530 760 H0 Z" fill="#2563eb" opacity="0.045"/>
+  <circle cx="1415" cy="105" r="250" fill="#7c3aed" opacity="0.065"/>
+
+  <text x="62" y="48" class="arch-kicker" fill="#7dd3fc">DONE · CONTROL PLANE</text>
+  <text id="architecture-heading" x="62" y="88" class="arch-title" fill="#f8fafc">One command. Governed execution.</text>
+  <text x="62" y="116" class="arch-subtitle" fill="#9fb0cd">A small, auditable core keeps decisions deterministic while integrations stay replaceable.</text>
+  <g transform="translate(1320 42)">
+    <rect width="218" height="34" rx="17" fill="#111d36" stroke="#334b72"/>
+    <circle cx="20" cy="17" r="4" fill="#60a5fa" filter="url(#arch-glow)"/>
+    <text x="34" y="22" class="arch-micro" fill="#c8d5ed">REFERENCE ARCHITECTURE</text>
+  </g>
+
+  <text x="62" y="173" class="arch-label" fill="#7185a9">CLIENT SURFACES</text>
+  <g filter="url(#arch-shadow)">
+    <rect x="62" y="194" width="264" height="382" rx="22" fill="#0d1930" stroke="#233959"/>
+    <rect x="63" y="195" width="4" height="380" rx="2" fill="#3b82f6"/>
+  </g>
+  <g transform="translate(88 226)">
+    <rect width="212" height="82" rx="15" fill="#111f3a" stroke="#2a4165"/>
+    <rect x="18" y="19" width="34" height="28" rx="6" fill="#172c4f" stroke="#60a5fa"/>
+    <rect x="27" y="22" width="16" height="23" rx="3" fill="none" stroke="#93c5fd" stroke-width="2"/>
+    <path d="M32 41 H38" fill="none" stroke="#93c5fd" stroke-width="2" stroke-linecap="round"/>
+    <text x="68" y="35" class="arch-card-title" fill="#eef5ff">Mobile</text>
+    <text x="68" y="57" class="arch-copy" fill="#8fa3c5">iOS · Android</text>
+  </g>
+  <g transform="translate(88 326)">
+    <rect width="212" height="82" rx="15" fill="#111f3a" stroke="#2a4165"/>
+    <rect x="18" y="18" width="34" height="30" rx="6" fill="#172c4f" stroke="#60a5fa"/>
+    <path d="M19 27 H51 M28 22 H29 M34 22 H35" fill="none" stroke="#93c5fd" stroke-width="2" stroke-linecap="round"/>
+    <text x="68" y="35" class="arch-card-title" fill="#eef5ff">Web</text>
+    <text x="68" y="57" class="arch-copy" fill="#8fa3c5">approval workspace</text>
+  </g>
+  <g transform="translate(88 426)">
+    <rect width="212" height="82" rx="15" fill="#111f3a" stroke="#2a4165"/>
+    <circle cx="35" cy="34" r="17" fill="#172c4f" stroke="#60a5fa"/>
+    <path d="M27 34 H43 M35 26 V42" fill="none" stroke="#93c5fd" stroke-width="2" stroke-linecap="round"/>
+    <text x="68" y="35" class="arch-card-title" fill="#eef5ff">API</text>
+    <text x="68" y="57" class="arch-copy" fill="#8fa3c5">typed integrations</text>
+  </g>
+  <text x="88" y="548" class="arch-micro" fill="#60779e">ONE CONTRACT · THREE SURFACES</text>
+
+  <path d="M326 385 H382" class="arch-flow"/>
+  <text x="338" y="370" class="arch-micro" fill="#7691b9">HTTPS</text>
+
+  <text x="382" y="254" class="arch-label" fill="#7185a9">EDGE</text>
+  <g filter="url(#arch-shadow)">
+    <rect x="382" y="274" width="234" height="224" rx="24" fill="#0f1d37" stroke="#31598a"/>
+    <rect x="382" y="274" width="234" height="5" rx="2.5" fill="url(#arch-accent)"/>
+  </g>
+  <g transform="translate(408 308)">
+    <rect width="50" height="50" rx="14" fill="#172e54" stroke="#3b82f6"/>
+    <path d="M15 17 H35 M15 25 H35 M15 33 H27" fill="none" stroke="#bfdbfe" stroke-width="2.5" stroke-linecap="round"/>
+    <text x="0" y="86" class="arch-card-title" fill="#f8fafc">FastAPI gateway</text>
+    <text x="0" y="112" class="arch-copy" fill="#94a8c9">validation · auth · routing</text>
+    <rect x="0" y="137" width="78" height="29" rx="14.5" fill="#111f3a" stroke="#2b4c75"/>
+    <text x="17" y="156" class="arch-micro" fill="#93c5fd">TYPED</text>
+    <rect x="88" y="137" width="91" height="29" rx="14.5" fill="#111f3a" stroke="#2b4c75"/>
+    <text x="105" y="156" class="arch-micro" fill="#93c5fd">VERSIONED</text>
+  </g>
+
+  <path d="M616 385 H674" class="arch-flow"/>
+  <text x="628" y="370" class="arch-micro" fill="#7691b9">COMMAND</text>
+
+  <text x="674" y="173" class="arch-label" fill="#8f7cc4">DETERMINISTIC CORE</text>
+  <g filter="url(#arch-shadow)">
+    <rect x="674" y="194" width="530" height="382" rx="24" fill="#0d1830" stroke="#4b3d79"/>
+    <rect x="675" y="195" width="528" height="380" rx="23" fill="url(#arch-violet)"/>
+  </g>
+  <g transform="translate(706 226)">
+    <rect width="208" height="118" rx="18" fill="#121f3c" stroke="#38517d"/>
+    <circle cx="28" cy="29" r="10" fill="#2563eb" opacity="0.25"/>
+    <circle cx="28" cy="29" r="4" fill="#60a5fa"/>
+    <text x="50" y="36" class="arch-card-title" fill="#f3f7ff">Application</text>
+    <text x="22" y="70" class="arch-copy" fill="#91a5c7">use cases · policies</text>
+    <text x="22" y="93" class="arch-copy" fill="#91a5c7">transaction boundary</text>
+  </g>
+  <g transform="translate(960 226)">
+    <rect width="208" height="118" rx="18" fill="#171d3e" stroke="#624f98"/>
+    <circle cx="28" cy="29" r="10" fill="#7c3aed" opacity="0.27"/>
+    <circle cx="28" cy="29" r="4" fill="#a78bfa"/>
+    <text x="50" y="36" class="arch-card-title" fill="#f5f3ff">Domain</text>
+    <text x="22" y="70" class="arch-copy" fill="#a69ac8">rules · invariants</text>
+    <text x="22" y="93" class="arch-copy" fill="#a69ac8">money-safe decisions</text>
+  </g>
+  <path d="M914 285 H952" class="arch-flow-violet"/>
+  <g transform="translate(706 388)">
+    <rect width="462" height="146" rx="18" fill="#111e39" stroke="#3b5a8c"/>
+    <rect x="22" y="22" width="44" height="44" rx="13" fill="#172e54" stroke="#3b82f6"/>
+    <path d="M34 35 H54 M34 44 H49 M34 53 H44" fill="none" stroke="#bfdbfe" stroke-width="2.4" stroke-linecap="round"/>
+    <text x="84" y="51" class="arch-card-title" fill="#f3f7ff">Workflow engine</text>
+    <text x="22" y="92" class="arch-copy" fill="#91a5c7">state machine · approvals · retries · audit events</text>
+    <rect x="22" y="108" width="123" height="24" rx="12" fill="#172640"/>
+    <text x="38" y="125" class="arch-micro" fill="#8fb7ed">REPLAYABLE</text>
+    <rect x="155" y="108" width="137" height="24" rx="12" fill="#172640"/>
+    <text x="172" y="125" class="arch-micro" fill="#8fb7ed">OBSERVABLE</text>
+    <rect x="302" y="108" width="127" height="24" rx="12" fill="#172640"/>
+    <text x="319" y="125" class="arch-micro" fill="#8fb7ed">IDEMPOTENT</text>
+  </g>
+  <path d="M810 344 V380" class="arch-flow"/>
+  <path d="M1064 344 V380" class="arch-flow-violet"/>
+
+  <text x="1262" y="173" class="arch-label" fill="#7185a9">DATA &amp; ADAPTERS</text>
+  <g filter="url(#arch-shadow)">
+    <rect x="1262" y="194" width="276" height="382" rx="22" fill="#0d1930" stroke="#293e62"/>
+  </g>
+  <g transform="translate(1288 232)">
+    <rect width="224" height="126" rx="17" fill="#111f3a" stroke="#36547f"/>
+    <ellipse cx="35" cy="29" rx="15" ry="7" fill="#172e54" stroke="#60a5fa"/>
+    <path d="M20 29 V48 C20 52 27 55 35 55 C43 55 50 52 50 48 V29 M20 39 C20 43 27 46 35 46 C43 46 50 43 50 39" fill="none" stroke="#93c5fd" stroke-width="2"/>
+    <text x="68" y="36" class="arch-card-title" fill="#eef5ff">SQLite</text>
+    <text x="22" y="81" class="arch-copy" fill="#91a5c7">local source of truth</text>
+    <text x="22" y="104" class="arch-micro" fill="#6f88ae">STATE · AUDIT · RESERVES</text>
+  </g>
+  <g transform="translate(1288 390)">
+    <rect width="224" height="146" rx="17" fill="#151d3a" stroke="#564783"/>
+    <path d="M23 28 H47 L43 48 H27 Z M29 54 A3 3 0 1 0 29.1 54 M42 54 A3 3 0 1 0 42.1 54" fill="none" stroke="#c4b5fd" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="68" y="40" class="arch-card-title" fill="#f5f3ff">Commerce</text>
+    <text x="22" y="84" class="arch-copy" fill="#a69ac8">catalog · cards · checkout</text>
+    <rect x="22" y="103" width="180" height="25" rx="12.5" fill="#201c42"/>
+    <text x="43" y="121" class="arch-micro" fill="#b9a7ee">REPLACEABLE ADAPTERS</text>
+  </g>
+  <path d="M1204 285 H1254" class="arch-flow"/>
+  <path d="M1204 461 H1254" class="arch-flow-violet"/>
+
+  <g transform="translate(760 614)">
+    <rect width="430" height="80" rx="18" fill="#111831" stroke="#5b458c" stroke-dasharray="7 7"/>
+    <rect x="18" y="18" width="104" height="28" rx="14" fill="#251d48" stroke="#6d54a4"/>
+    <text x="36" y="37" class="arch-micro" fill="#c4b5fd">OPTIONAL</text>
+    <text x="140" y="35" class="arch-card-title" fill="#f5f3ff">OpenAI adapter</text>
+    <text x="18" y="64" class="arch-copy" fill="#9d91bd">voice services only · never the money authority</text>
+  </g>
+  <path d="M1008 614 V544" class="arch-flow-optional"/>
+  <text x="1022" y="603" class="arch-micro" fill="#9b89cb">ENRICH</text>
+
+  <g transform="translate(62 627)">
+    <rect width="578" height="67" rx="17" fill="#0b172c" stroke="#233959"/>
+    <text x="22" y="27" class="arch-label" fill="#7185a9">TRUST MODEL</text>
+    <circle cx="24" cy="46" r="4" fill="#60a5fa"/>
+    <text x="36" y="51" class="arch-copy" fill="#9fb0cd">typed edges</text>
+    <circle cx="150" cy="46" r="4" fill="#a78bfa"/>
+    <text x="162" y="51" class="arch-copy" fill="#9fb0cd">policy core</text>
+    <circle cx="280" cy="46" r="4" fill="#64748b"/>
+    <text x="292" y="51" class="arch-copy" fill="#9fb0cd">replaceable adapters</text>
+    <text x="455" y="51" class="arch-micro" fill="#7185a9">NO HIDDEN SIDE EFFECTS</text>
+  </g>
+</svg>
