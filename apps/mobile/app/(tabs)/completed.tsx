@@ -74,7 +74,6 @@ export default function CompletedScreen() {
     <AppScreen testID="completed-screen">
       <PageHeader
         title={pageTitle}
-        subtitle="Review finished missions, recoveries and verified savings."
         action={<CircleAction label="Select date" onPress={() => setPickerOpen(true)}><CalendarDays color={colors.primaryBright} size={23} /></CircleAction>}
       />
 

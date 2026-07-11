@@ -33,15 +33,15 @@ def _env_bool(name: str, default: bool) -> bool:
 @dataclass(frozen=True, slots=True)
 class MissionServiceSettings:
     stt_enabled: bool = False
-    inject_demo_failures: bool = True
-    demo_endpoints_enabled: bool = True
+    inject_demo_failures: bool = False
+    demo_endpoints_enabled: bool = False
 
     @classmethod
     def from_env(cls) -> "MissionServiceSettings":
         return cls(
             stt_enabled=_env_bool("DONE_STT_ENABLED", False),
-            inject_demo_failures=_env_bool("DONE_DEMO_FAILURES_ENABLED", True),
-            demo_endpoints_enabled=_env_bool("DONE_DEMO_ENDPOINTS_ENABLED", True),
+            inject_demo_failures=_env_bool("DONE_DEMO_FAILURES_ENABLED", False),
+            demo_endpoints_enabled=_env_bool("DONE_DEMO_ENDPOINTS_ENABLED", False),
         )
 
 
@@ -91,9 +91,10 @@ class MissionApplicationService:
             profile = self.user_service.get_profile().profile
             approval_mode = user_settings.approval_policy.value
             threshold_minor = user_settings.approval_threshold.minor
+            mission_currency = str(interpretation.get("currency", "PLN"))
             if (
                 approval_mode == "above_threshold"
-                and user_settings.approval_threshold.currency != "PLN"
+                and user_settings.approval_threshold.currency != mission_currency
             ):
                 # Comparing money without an FX quote is unsafe. Until the
                 # exchange-rate port exists, fail closed by requiring approval.
@@ -101,7 +102,7 @@ class MissionApplicationService:
                 threshold_minor = 0
             execution_policy = MissionExecutionPolicy(
                 approval_mode=approval_mode,
-                approval_threshold=Money(threshold_minor, "PLN"),
+                approval_threshold=Money(threshold_minor, mission_currency),
                 safe_recovery_enabled=user_settings.safe_recovery_enabled,
                 preferred_merchant_ids=user_settings.preferred_merchant_ids,
                 default_constraints=profile.default_constraints,

@@ -23,10 +23,10 @@ import { colors, radii, spacing, type } from "@/theme/tokens";
 type ActionFilter = "all" | "required" | "working";
 type MissionSort = NonNullable<MissionListFilters["sort"]>;
 
-const actionOptions: Array<{ value: ActionFilter; label: string; description: string }> = [
-  { value: "all", label: "All active", description: "Every mission that is still in progress" },
-  { value: "required", label: "Needs my action", description: "Approvals and decisions waiting for you" },
-  { value: "working", label: "Done is working", description: "Missions that do not need your input" },
+const actionOptions: Array<{ value: ActionFilter; label: string }> = [
+  { value: "all", label: "All" },
+  { value: "required", label: "Needs action" },
+  { value: "working", label: "In progress" },
 ];
 
 const sortOptions: Array<{ value: MissionSort; label: string }> = [
@@ -109,7 +109,6 @@ export default function MissionsScreen() {
     <AppScreen testID="missions-screen">
       <PageHeader
         title="Active Missions"
-        subtitle="Done is working on it. You’ll hear from me if I need you."
         action={<CircleAction label="Filter missions" onPress={openFilters}><SlidersHorizontal color={colors.primaryBright} size={23} /></CircleAction>}
       />
 
@@ -138,10 +137,8 @@ export default function MissionsScreen() {
                   <Text style={styles.title}>{primary.title}</Text>
                   <StatusPill status={primary.status} />
                 </View>
-                <Text style={styles.subtitle}>{primary.subtitle}</Text>
                 <View style={styles.progressRow}>
                   <ProgressBar progress={primary.progress} />
-                  <Text style={styles.progressText}>{primary.current_step} of {primary.total_steps} steps</Text>
                 </View>
               </View>
             </View>
@@ -160,7 +157,6 @@ export default function MissionsScreen() {
       <PreferenceModal
         visible={filterOpen}
         title="Filter missions"
-        description="Search active work and decide which missions need attention first."
         onClose={() => setFilterOpen(false)}
         onSave={applyFilters}
         saveLabel="Apply filters"
@@ -172,7 +168,7 @@ export default function MissionsScreen() {
         </View>
         <Text style={styles.filterLabel}>Attention</Text>
         <View accessibilityRole="radiogroup" style={styles.choiceList}>
-          {actionOptions.map((option) => <ChoiceRow key={option.value} label={option.label} description={option.description} selected={draftAction === option.value} onPress={() => setDraftAction(option.value)} />)}
+        {actionOptions.map((option) => <ChoiceRow key={option.value} label={option.label} selected={draftAction === option.value} onPress={() => setDraftAction(option.value)} />)}
         </View>
         <Text style={styles.filterLabel}>Sort</Text>
         <View accessibilityRole="radiogroup" style={styles.choiceList}>
@@ -191,9 +187,7 @@ const styles = StyleSheet.create({
   heroContent: { flex: 1, minWidth: 0 },
   titleRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: spacing.xs },
   title: { ...type.h3, color: colors.text, flexShrink: 1 },
-  subtitle: { ...type.small, color: colors.textSecondary, marginTop: 5 },
-  progressRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: spacing.md },
-  progressText: { ...type.caption, color: colors.primaryBright },
+  progressRow: { flexDirection: "row", alignItems: "center", marginTop: spacing.sm },
   timelinePanel: { marginTop: spacing.lg, padding: spacing.md, borderRadius: 16, backgroundColor: "rgba(22,25,43,0.64)", borderWidth: 1, borderColor: colors.hairline },
   list: { gap: spacing.sm, marginTop: spacing.sm },
   shortcut: { marginTop: spacing.md },

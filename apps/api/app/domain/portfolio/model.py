@@ -175,6 +175,7 @@ class PortfolioDecision:
     constraint_report: tuple[str, ...] = ()
     explanations: tuple[str, ...] = ()
     solver_metadata: dict[str, object] = field(default_factory=dict)
+    execution_mode: str = "active"
     created_at: datetime | None = None
 
     @property

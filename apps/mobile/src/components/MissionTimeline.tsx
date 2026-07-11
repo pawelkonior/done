@@ -1,4 +1,4 @@
-import { Check, Sparkles } from "lucide-react-native";
+import { Check } from "lucide-react-native";
 import { StyleSheet, Text, View } from "react-native";
 import { colors, radii, spacing, type } from "@/theme/tokens";
 import { workflowSteps } from "@/lib/status";
@@ -44,21 +44,10 @@ export function MissionTimeline({
                   </Text>
                 ) : null}
               </View>
-              {current && !compact ? (
-                <Text style={styles.stepSubtitle}>
-                  {position === 4 ? "Comparing delivery speed, price and reliability" : "Done is handling this now"}
-                </Text>
-              ) : null}
             </View>
           </View>
         );
       })}
-      <View style={[styles.note, compact && styles.noteCompact]}>
-        <Sparkles size={25} color={colors.primaryBright} />
-        <Text style={styles.noteText}>
-          I found a few great options within your budget. I’ll update you if I need a decision.
-        </Text>
-      </View>
     </View>
   );
 }
@@ -88,7 +77,6 @@ const styles = StyleSheet.create({
   stepTitleRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
   stepTitle: { ...type.small, color: colors.textSecondary, flexShrink: 1 },
   stepTitleCurrent: { ...type.bodyMedium, color: colors.text },
-  stepSubtitle: { ...type.caption, color: colors.textSecondary, marginTop: 2 },
   now: {
     ...type.caption,
     color: colors.primaryBright,
@@ -98,17 +86,4 @@ const styles = StyleSheet.create({
     paddingHorizontal: 9,
   },
   time: { ...type.caption, color: colors.textMuted, marginLeft: "auto" },
-  note: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-    padding: spacing.md,
-    backgroundColor: "rgba(155, 92, 255, 0.045)",
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    borderRadius: radii.md,
-    marginTop: spacing.sm,
-  },
-  noteCompact: { paddingVertical: spacing.sm },
-  noteText: { ...type.small, color: colors.textSecondary, flex: 1 },
 });

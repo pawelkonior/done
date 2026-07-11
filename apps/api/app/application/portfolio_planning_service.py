@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 import sqlite3
+from typing import Literal
 from uuid import uuid4
 
 from app.domain.portfolio.enums import PortfolioDecisionStatus, PortfolioTrigger
@@ -52,16 +53,26 @@ class PortfolioPlanningService:
         trigger: PortfolioTrigger,
         preferred_merchants: tuple[str, ...] = (),
         now: datetime | None = None,
+        execution_mode: Literal["active", "shadow"] = "active",
     ) -> PortfolioDecision:
+        if execution_mode not in {"active", "shadow"}:
+            raise ValueError("execution_mode must be active or shadow")
         now = now or datetime.now(UTC)
         state = self.repository.get_or_create_plan_state(connection, mission_id)
         snapshot = self.repository.capture_market_snapshot(
             connection, mission_id=mission_id, now=now
         )
         idempotency_key = sha256(
-            f"{mission_id}:{state.contract_version}:{snapshot.id}:{trigger.value}".encode()
+            f"{mission_id}:{state.contract_version}:{snapshot.id}:{trigger.value}:{execution_mode}".encode()
         ).hexdigest()
         existing = self.repository.decision_for_idempotency_key(connection, idempotency_key)
+        if existing is None and execution_mode == "active":
+            # Preserve idempotent retries for active decisions created before
+            # shadow mode added the execution-mode suffix.
+            legacy_key = sha256(
+                f"{mission_id}:{state.contract_version}:{snapshot.id}:{trigger.value}".encode()
+            ).hexdigest()
+            existing = self.repository.decision_for_idempotency_key(connection, legacy_key)
         if existing is not None:
             return existing
         actions = self._build_actions(connection, state, snapshot, now)
@@ -99,7 +110,10 @@ class PortfolioPlanningService:
                 "contract_version": state.contract_version,
                 "catalog_hash": snapshot.catalog_hash,
                 "actions_considered": len(actions),
+                "execution_mode": execution_mode,
+                "solver_time_ms": solver_result.wall_time_ms,
             },
+            execution_mode=execution_mode,
             created_at=now,
         )
         self.repository.persist_decision(

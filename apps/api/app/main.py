@@ -19,18 +19,22 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
+from .access import ApiAccessSettings
 from .application.mission_service import (
     EmptyTranscriptionError,
     MissionApplicationService,
     MissionServiceSettings,
     SpeechInputUnavailableError,
 )
+from .application.catalog_service import CatalogApplicationService
 from .application.portfolio_planning_service import PortfolioPlanningService
 from .application.ports.ai import SpeechToTextPort
 from .application.ports.realtime import RealtimeSessionPort
 from .application.user_service import UserApplicationService
 from .config import (
+    PortfolioShadowSettings,
     RealtimeSettings,
+    get_portfolio_shadow_settings,
     get_realtime_settings,
     get_transcription_settings,
 )
@@ -44,12 +48,17 @@ from .infrastructure.ai.openai_transcription import (
     OpenAITranscriptionError,
 )
 from .infrastructure.persistence.user_repository import SQLiteUserRepository
+from .infrastructure.persistence.catalog_repository import SQLiteCatalogRepository
+from .presentation.catalog_router import create_catalog_router
 from .presentation.user_router import create_user_router
 from .schemas import (
+    ActionResolveRequest,
     ApprovalResolveRequest,
     DeliveryOptionSelectionRequest,
     FailureInjectionRequest,
+    HumanSupportRequest,
     MissionCorrectionRequest,
+    MissionCancelRequest,
     MissionCreateRequest,
     RealtimeClientSecretRequest,
     ReplanMissionRequest,
@@ -85,6 +94,15 @@ def _expected_revision(body_revision: int | None, if_match: str | None) -> int |
             "expected_revision in the body does not match the If-Match header"
         )
     return header_revision if header_revision is not None else body_revision
+
+
+def _required_revision(body_revision: int | None, if_match: str | None = None) -> int:
+    revision = _expected_revision(body_revision, if_match)
+    if revision is None:
+        raise WorkflowConflictError(
+            "This mutation requires the exact current mission revision"
+        )
+    return revision
 
 
 def _completed_bound(value: str | None, *, end_of_day: bool) -> str | None:
@@ -132,15 +150,25 @@ def create_app(
     speech_to_text: SpeechToTextPort | None = None,
     realtime: RealtimeSessionPort | None = None,
     realtime_settings: RealtimeSettings | None = None,
+    portfolio_shadow_settings: PortfolioShadowSettings | None = None,
 ) -> FastAPI:
     resolved_path = database_path or os.getenv(
         "DONE_DB_PATH", str(Path(__file__).resolve().parents[1] / "done.sqlite3")
     )
+    commerce_mode = os.getenv("DONE_COMMERCE_MODE", "demo").strip().casefold()
+    access_settings = ApiAccessSettings.from_env(commerce_mode=commerce_mode)
     database = Database(resolved_path)
     database.initialize()
     portfolio_planner = PortfolioPlanningService()
-    workflow = MissionWorkflow(database, portfolio_planner=portfolio_planner)
+    resolved_shadow_settings = portfolio_shadow_settings or get_portfolio_shadow_settings()
+    workflow = MissionWorkflow(
+        database,
+        portfolio_planner=portfolio_planner,
+        portfolio_shadow_settings=resolved_shadow_settings,
+        commerce_mode=commerce_mode,
+    )
     user_service = UserApplicationService(SQLiteUserRepository(database))
+    catalog_service = CatalogApplicationService(SQLiteCatalogRepository(database))
     runtime_settings = mission_settings or MissionServiceSettings.from_env()
     transcription_settings = get_transcription_settings()
     live_settings = realtime_settings or get_realtime_settings()
@@ -176,9 +204,12 @@ def create_app(
     application.state.database = database
     application.state.workflow = workflow
     application.state.portfolio_planner = portfolio_planner
+    application.state.portfolio_shadow_settings = resolved_shadow_settings
     application.state.user_service = user_service
+    application.state.catalog_service = catalog_service
     application.state.mission_service = mission_service
     application.state.realtime = resolved_realtime
+    application.state.access_settings = access_settings
     allowed_origins = [
         item.strip()
         for item in os.getenv(
@@ -193,14 +224,43 @@ def create_app(
         allow_origins=allowed_origins,
         allow_credentials=False,
         allow_methods=["GET", "POST", "PUT", "PATCH", "OPTIONS"],
-        allow_headers=["Accept", "Content-Type", "If-Match", "X-Request-ID"],
+        allow_headers=[
+            "Accept",
+            "Authorization",
+            "Content-Type",
+            "If-Match",
+            "X-Request-ID",
+        ],
         expose_headers=["ETag", "X-Request-ID"],
     )
     application.include_router(create_user_router(user_service))
+    application.include_router(create_catalog_router(catalog_service))
 
     @application.middleware("http")
-    async def disable_api_caching(request: Request, call_next):  # type: ignore[no-untyped-def]
+    async def protect_and_disable_api_caching(  # type: ignore[no-untyped-def]
+        request: Request, call_next
+    ):
         request_id = request.headers.get("X-Request-ID") or uuid4().hex
+        protected = request.url.path.startswith("/v1/") and request.url.path not in {
+            "/v1/health",
+        }
+        if (
+            protected
+            and request.method != "OPTIONS"
+            and not access_settings.accepts(request.headers.get("Authorization"))
+        ):
+            return JSONResponse(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                content={
+                    "error": "authentication_required",
+                    "message": "A valid bearer token is required",
+                },
+                headers={
+                    "Cache-Control": "no-store",
+                    "WWW-Authenticate": "Bearer",
+                    "X-Request-ID": request_id[:128],
+                },
+            )
         response = await call_next(request)
         if request.url.path.startswith("/v1/"):
             response.headers["Cache-Control"] = "no-store"
@@ -327,6 +387,12 @@ def create_app(
                     "model": live_settings.model,
                     "detail": "Live voice health check failed.",
                 }
+        capabilities["portfolio_automation"] = {
+            "shadow_mode": resolved_shadow_settings.enabled,
+            "autonomy_enabled": resolved_shadow_settings.autonomy_enabled,
+            "automatic_purchases_default": False,
+            "promotion_gate": resolved_shadow_settings.promotion_gate,
+        }
         return capabilities
 
     @application.post(
@@ -342,9 +408,75 @@ def create_app(
                 "Live voice is not configured on this server"
             )
         safety_identifier = sha256(b"done:demo-user").hexdigest()
+        mission_context: dict[str, Any] | None = None
+        if payload.mission_id:
+            detail = workflow.get_detail(payload.mission_id)
+            pending_action = next(
+                (
+                    item
+                    for item in detail.get("action_requests", [])
+                    if item.get("status") == "pending"
+                    and item.get("owner") == "user"
+                ),
+                None,
+            )
+            approval = detail.get("approval")
+            pending_approval = (
+                approval
+                if isinstance(approval, dict) and approval.get("status") == "pending"
+                else None
+            )
+            mission_context = {
+                "mission": {
+                    "id": detail["mission"]["id"],
+                    "revision": detail["mission"]["revision"],
+                    "status": detail["mission"]["status"],
+                    "contract_available": detail.get("contract") is not None,
+                },
+                "approval": (
+                    {
+                        "id": pending_approval.get("id"),
+                        "status": pending_approval.get("status"),
+                        "plan_hash": pending_approval.get("plan_hash"),
+                        "merchant_id": pending_approval.get("merchant_id"),
+                        "amount": pending_approval.get("amount"),
+                        "currency": pending_approval.get("currency"),
+                        "choices": [
+                            item.get("id")
+                            for item in pending_approval.get("options", [])
+                            if isinstance(item, dict)
+                        ],
+                    }
+                    if pending_approval
+                    else None
+                ),
+                "action": (
+                    {
+                        "id": pending_action.get("id"),
+                        "status": pending_action.get("status"),
+                        "owner": pending_action.get("owner"),
+                        "choices": [
+                            item.get("id")
+                            for item in pending_action.get("options", [])
+                            if isinstance(item, dict)
+                        ],
+                    }
+                    if pending_action
+                    else None
+                ),
+                # Titles and questions can contain user, catalog or merchant text.
+                # They are display-only context and are never part of tool bindings.
+                "untrusted_data": {
+                    "mission_title": detail["mission"].get("title"),
+                    "action_question": (
+                        pending_action.get("question") if pending_action else None
+                    ),
+                },
+            }
         secret = await resolved_realtime.create_client_secret(
             language=payload.language,
             safety_identifier=safety_identifier,
+            mission_context=mission_context,
         )
         return {
             "value": secret.value,
@@ -449,6 +581,30 @@ def create_app(
     def portfolio_decisions(mission_id: str) -> dict[str, object]:
         return workflow.get_portfolio_decisions(mission_id)
 
+    @application.post("/v1/missions/{mission_id}/portfolio-shadow", tags=["missions"])
+    def run_portfolio_shadow(mission_id: str) -> dict[str, object]:
+        if not resolved_shadow_settings.enabled:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Portfolio shadow mode is disabled",
+            )
+        return workflow.run_portfolio_shadow(mission_id)
+
+    @application.get(
+        "/v1/missions/{mission_id}/portfolio-shadow-audits", tags=["missions"]
+    )
+    def portfolio_shadow_audits(mission_id: str) -> dict[str, object]:
+        return workflow.get_portfolio_shadow_audits(mission_id)
+
+    @application.get("/v1/portfolio/shadow/telemetry", tags=["system"])
+    def portfolio_shadow_telemetry() -> dict[str, object]:
+        return {
+            "enabled": resolved_shadow_settings.enabled,
+            "autonomy_enabled": resolved_shadow_settings.autonomy_enabled,
+            "promotion_gate": resolved_shadow_settings.promotion_gate,
+            "metrics": workflow.get_portfolio_shadow_telemetry(),
+        }
+
     @application.post("/v1/missions/{mission_id}/replan", tags=["missions"])
     def replan_mission(
         mission_id: str,
@@ -472,7 +628,7 @@ def create_app(
         return workflow.select_delivery_option(
             mission_id=mission_id,
             delivery_option_id=payload.delivery_option_id,
-            expected_revision=_expected_revision(payload.expected_revision, if_match),
+            expected_revision=_required_revision(payload.expected_revision, if_match),
         )
 
     @application.post(
@@ -487,7 +643,7 @@ def create_app(
         return workflow.apply_correction(
             mission_id=mission_id,
             correction=payload.correction,
-            expected_revision=_expected_revision(payload.expected_revision, if_match),
+            expected_revision=_required_revision(payload.expected_revision, if_match),
         )
 
     @application.get("/v1/missions/{mission_id}/events", tags=["missions"])
@@ -498,8 +654,18 @@ def create_app(
         return workflow.get_events(mission_id, after_id)
 
     @application.post("/v1/missions/{mission_id}/cancel", tags=["missions"])
-    def cancel_mission(mission_id: str) -> dict[str, object]:
-        return workflow.cancel_mission(mission_id)
+    def cancel_mission(
+        mission_id: str,
+        payload: MissionCancelRequest | None = None,
+        if_match: Annotated[str | None, Header(alias="If-Match")] = None,
+    ) -> dict[str, object]:
+        return workflow.cancel_mission(
+            mission_id,
+            expected_revision=_required_revision(
+                payload.expected_revision if payload is not None else None,
+                if_match,
+            ),
+        )
 
     @application.post("/v1/approvals/{approval_id}/resolve", tags=["approvals"])
     def resolve_approval(
@@ -509,6 +675,37 @@ def create_app(
             approval_id=approval_id,
             choice=payload.choice,
             voice_transcript=payload.voice_transcript,
+            expected_revision=_required_revision(payload.expected_revision),
+            expected_amount=payload.amount,
+            expected_currency=payload.currency,
+            expected_plan_hash=payload.plan_hash,
+            expected_merchant_id=payload.merchant_id,
+        )
+
+    @application.post(
+        "/v1/action-requests/{action_request_id}/resolve",
+        tags=["actions"],
+    )
+    def resolve_action_request(
+        action_request_id: str,
+        payload: ActionResolveRequest,
+    ) -> dict[str, object]:
+        return workflow.resolve_action_request(
+            action_request_id,
+            payload.choice,
+            voice_transcript=payload.voice_transcript,
+            expected_revision=_required_revision(payload.expected_revision),
+        )
+
+    @application.post("/v1/missions/{mission_id}/support", tags=["actions"])
+    def request_human_support(
+        mission_id: str,
+        payload: HumanSupportRequest,
+    ) -> dict[str, object]:
+        return workflow.request_human_support(
+            mission_id,
+            reason=payload.reason,
+            expected_revision=_required_revision(payload.expected_revision),
         )
 
     @application.post(

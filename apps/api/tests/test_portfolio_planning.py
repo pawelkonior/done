@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from collections import Counter
 from datetime import UTC, date, datetime
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from app.config import PortfolioShadowSettings
 from app.domain.portfolio.enums import PortfolioTrigger, PriceSignalKind, TimingMode
 from app.domain.portfolio.model import (
     CandidateOffer,
@@ -13,6 +16,7 @@ from app.domain.portfolio.model import (
     PriceSignal,
 )
 from app.domain.portfolio.policies import TimingGate
+from app.main import create_app
 
 
 def _create(client: TestClient, transcript: str) -> dict:
@@ -75,6 +79,31 @@ def test_created_mission_contains_a_persisted_portfolio_decision(
     assert all(action["lptb"] for action in decision["actions"])
     assert all(action["quantity"] > 0 for action in decision["actions"])
     assert created["approval"]["decision_id"] == decision["id"]
+
+
+def test_created_party_basket_is_the_exact_portfolio_decision_projection(
+    client: TestClient, transcript: str
+) -> None:
+    created = _create(client, transcript)
+    decision = created["portfolio_decision"]
+    basket = created["basket"]
+    approval = created["approval"]
+
+    assert basket is not None
+    assert approval is not None
+    decision_quantities: Counter[str] = Counter()
+    for action in decision["actions"]:
+        if action["action"] == "buy_now":
+            decision_quantities[action["product_id"]] += action["quantity"]
+    basket_quantities: Counter[str] = Counter()
+    for item in basket["items"]:
+        basket_quantities[item["product_id"]] += item["quantity"]
+
+    assert decision_quantities == basket_quantities
+    assert "candles-ten" in basket_quantities
+    assert decision["selected_merchant_id"] == basket["merchant"]["id"]
+    assert round(decision["total"] * 100) == round(basket["total"] * 100)
+    assert round(approval["amount"] * 100) == round(basket["total"] * 100)
 
 
 def test_replan_creates_new_decision_and_supersedes_approval(
@@ -261,3 +290,90 @@ def test_contract_owns_needs_and_revises_them_with_participant_count(
     assert revised_needs["drinks_juice"] == 8
     assert revised_needs["drinks_water"] == 6
     assert detail["approval"]["decision_id"] == detail["portfolio_decision"]["id"]
+
+
+def test_shadow_mode_records_comparison_without_touching_checkout_state(
+    tmp_path: Path, transcript: str
+) -> None:
+    app = create_app(
+        tmp_path / "shadow.sqlite3",
+        portfolio_shadow_settings=PortfolioShadowSettings(enabled=True),
+    )
+    with TestClient(app) as shadow_client:
+        created = _create(shadow_client, transcript)
+        mission_id = created["mission"]["id"]
+        before = shadow_client.get(f"/v1/missions/{mission_id}").json()
+        with app.state.database.reader() as connection:
+            before_counts = {
+                table: connection.execute(
+                    f"SELECT COUNT(*) AS count FROM {table} WHERE mission_id = ?",
+                    (mission_id,),
+                ).fetchone()["count"]
+                for table in ("baskets", "approval_requests", "orders", "payment_attempts")
+            }
+            before_shadow_decisions = connection.execute(
+                "SELECT COUNT(*) AS count FROM portfolio_decisions WHERE mission_id = ? AND execution_mode = 'shadow'",
+                (mission_id,),
+            ).fetchone()["count"]
+
+        response = shadow_client.post(f"/v1/missions/{mission_id}/portfolio-shadow")
+        assert response.status_code == 200, response.text
+        run_audit = response.json()
+        after = shadow_client.get(f"/v1/missions/{mission_id}").json()
+        assert after["mission"]["status"] == before["mission"]["status"]
+        assert after["mission"]["revision"] == before["mission"]["revision"]
+        assert after["portfolio_decision"]["execution_mode"] == "active"
+        assert after["portfolio_decision"]["id"] == before["portfolio_decision"]["id"]
+        assert run_audit["not_executed_reason"] == "shadow_mode_enabled; execution_disabled"
+
+        audits = shadow_client.get(
+            f"/v1/missions/{mission_id}/portfolio-shadow-audits"
+        ).json()
+        assert audits["total"] == 2  # automatic run plus the explicit operator run
+        latest_audit = audits["items"][-1]
+        assert latest_audit["not_executed_reason"] == "shadow_mode_enabled; execution_disabled"
+        assert latest_audit["snapshot_id"]
+        assert latest_audit["solver_time_ms"] >= 0
+        assert "price_delta_cents" in latest_audit["difference"]
+
+        with app.state.database.reader() as connection:
+            after_counts = {
+                table: connection.execute(
+                    f"SELECT COUNT(*) AS count FROM {table} WHERE mission_id = ?",
+                    (mission_id,),
+                ).fetchone()["count"]
+                for table in ("baskets", "approval_requests", "orders", "payment_attempts")
+            }
+            after_shadow_decisions = connection.execute(
+                "SELECT COUNT(*) AS count FROM portfolio_decisions WHERE mission_id = ? AND execution_mode = 'shadow'",
+                (mission_id,),
+            ).fetchone()["count"]
+
+        assert after_counts == before_counts
+        assert after_shadow_decisions == before_shadow_decisions + 1
+
+        telemetry = shadow_client.get("/v1/portfolio/shadow/telemetry").json()
+        assert telemetry["enabled"] is True
+        assert telemetry["autonomy_enabled"] is False
+        assert telemetry["metrics"]["total_shadow_runs"] == 2
+        assert "feasibility_rate" in telemetry["metrics"]
+        assert "orange_mode_rate" in telemetry["metrics"]
+        assert "solver_time_ms_avg" in telemetry["metrics"]
+        assert "replan_rate" in telemetry["metrics"]
+        assert "recommendation_difference_rate" in telemetry["metrics"]
+        assert "price_delta_rate_avg" in telemetry["metrics"]
+
+
+def test_shadow_mode_and_autonomy_are_disabled_by_default(
+    client: TestClient, transcript: str
+) -> None:
+    created = _create(client, transcript)
+    mission_id = created["mission"]["id"]
+
+    response = client.post(f"/v1/missions/{mission_id}/portfolio-shadow")
+    assert response.status_code == 409
+    capabilities = client.get("/v1/runtime/capabilities").json()["portfolio_automation"]
+    assert capabilities["shadow_mode"] is False
+    assert capabilities["autonomy_enabled"] is False
+    assert capabilities["automatic_purchases_default"] is False
+    assert capabilities["promotion_gate"]["requires_manual_approval"] is True

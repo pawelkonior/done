@@ -19,11 +19,15 @@ function iconFor(event: MissionEvent) {
   return CircleDot;
 }
 
+function isRecovery(event: MissionEvent) {
+  return event.type.includes("recover") || event.type.includes("replac") || event.type.includes("rerout") || event.type.includes("retry");
+}
+
 export function EventTimeline({ events }: { events: MissionEvent[] }) {
   const ordered = [...events].sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0));
   return (
     <GlassCard style={styles.card}>
-      <Text style={styles.title}>Transparent execution log</Text>
+      <Text style={styles.title}>Mission & order timeline</Text>
       <Text style={styles.subtitle}>Every decision, retry and recovery is recorded.</Text>
       <View style={styles.events}>
         {ordered.map((event, index) => {
@@ -38,6 +42,7 @@ export function EventTimeline({ events }: { events: MissionEvent[] }) {
               <View style={styles.content}>
                 <View style={styles.heading}>
                   <Text style={styles.eventTitle}>{event.title}</Text>
+                  {isRecovery(event) ? <Text style={styles.recoveryBadge}>Recovery</Text> : null}
                   <Text style={styles.time}>{formatTime(event.created_at)}</Text>
                 </View>
                 <Text style={styles.description}>{event.description}</Text>
@@ -70,5 +75,6 @@ const styles = StyleSheet.create({
   eventTitle: { ...type.smallMedium, color: colors.text, flex: 1 },
   time: { ...type.caption, color: colors.textMuted },
   description: { ...type.caption, color: colors.textSecondary, marginTop: 3 },
+  recoveryBadge: { ...type.caption, color: colors.warning, backgroundColor: "rgba(255,184,77,0.10)", borderRadius: radii.round, paddingHorizontal: 6, paddingVertical: 2 },
 });
 

@@ -1,7 +1,8 @@
 import { useEffect, useRef } from "react";
-import { AudioLines, LoaderCircle, Sparkles } from "lucide-react-native";
+import { AudioLines, LoaderCircle } from "lucide-react-native";
 import {
   Animated,
+  Easing,
   Platform,
   Pressable,
   StyleSheet,
@@ -15,14 +16,12 @@ import { useVoiceCapture } from "@/hooks/useVoiceCapture";
 
 export function VoiceOrb({
   onTap,
-  onType,
   onRecorded,
 }: {
   onTap: () => void;
-  onType?: () => void;
   onRecorded: (audioUri: string | null) => Promise<void> | void;
 }) {
-  const { isRecording, isSubmitting, recordingDuration, error, setError } = useVoiceStore();
+  const { isRecording, isSubmitting, error, setError } = useVoiceStore();
   const { start, stop } = useVoiceCapture();
   const pulse = useRef(new Animated.Value(0)).current;
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -31,14 +30,23 @@ export function VoiceOrb({
   const recordingStarted = useRef(false);
 
   useEffect(() => {
+    const useNativeDriver = Platform.OS !== "web";
     const animation = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: isRecording ? 520 : 1800, useNativeDriver: Platform.OS !== "web" }),
-        Animated.timing(pulse, { toValue: 0, duration: isRecording ? 520 : 1800, useNativeDriver: Platform.OS !== "web" }),
+        Animated.timing(pulse, { toValue: 1, duration: 120, easing: Easing.out(Easing.cubic), useNativeDriver }),
+        Animated.timing(pulse, { toValue: 0, duration: 170, easing: Easing.inOut(Easing.quad), useNativeDriver }),
+        Animated.delay(90),
+        Animated.timing(pulse, { toValue: 0.72, duration: 105, easing: Easing.out(Easing.cubic), useNativeDriver }),
+        Animated.timing(pulse, { toValue: 0, duration: 185, easing: Easing.inOut(Easing.quad), useNativeDriver }),
+        Animated.delay(isRecording ? 420 : 1050),
       ]),
     );
     animation.start();
-    return () => animation.stop();
+    return () => {
+      animation.stop();
+      pulse.stopAnimation();
+      pulse.setValue(0);
+    };
   }, [isRecording, pulse]);
 
   const pressIn = () => {
@@ -66,75 +74,77 @@ export function VoiceOrb({
     await onRecorded(uri);
   };
 
-  const orbScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, isRecording ? 1.08 : 1.035] });
-  const glowOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.32, isRecording ? 0.82 : 0.56] });
+  const orbScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, isRecording ? 1.065 : 1.04] });
+  const haloScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, isRecording ? 1.2 : 1.14] });
+  const haloOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.34, 0.04] });
+  const glowScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, isRecording ? 1.14 : 1.09] });
+  const glowOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.28, isRecording ? 0.68 : 0.48] });
 
   return (
     <View style={styles.wrapper}>
-      <Pressable
-        onPress={() => { if (!longPress.current) onTap(); }}
-        onPressIn={pressIn}
-        onPressOut={() => void pressOut()}
-        disabled={isSubmitting}
-        accessibilityRole="button"
-        accessibilityLabel="Tap for GPT Realtime 2 with live captions, or hold to record for GPT-4o Transcribe"
-        testID="voice-orb"
-      >
-        <Animated.View style={[styles.glow, { opacity: glowOpacity, transform: [{ scale: orbScale }] }]} />
-        <Animated.View style={{ transform: [{ scale: orbScale }] }}>
-          <LinearGradient
-            colors={isRecording ? [colors.error, colors.primary] : [colors.primaryBright, colors.secondary]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.ringOuter}
-          >
-            <View style={styles.ringGap}>
-              <LinearGradient colors={["#17182B", "#0C0E1D"]} style={styles.orbInner}>
-                {isSubmitting ? (
-                  <LoaderCircle color={colors.text} size={43} strokeWidth={1.8} />
-                ) : (
-                  <AudioLines color={colors.text} size={47} strokeWidth={2.2} />
-                )}
-              </LinearGradient>
-            </View>
-          </LinearGradient>
-        </Animated.View>
-      </Pressable>
-      <Text style={styles.title}>
-        {isSubmitting ? "Understanding…" : isRecording ? "Recording for OpenAI STT…" : "Tap for live transcript"}
-      </Text>
-      {isRecording ? (
-        <>
-          <Text style={styles.subtitle}>{recordingDuration}s · release when done</Text>
-          <Text style={styles.sttHint}>Release to transcribe with GPT-4o Transcribe</Text>
-        </>
-      ) : (
-        <>
-          <View style={styles.liveLabel}><Sparkles size={13} color={colors.primaryBright} /><Text style={styles.liveText}>GPT Realtime 2 · realtime voice + captions</Text></View>
-          <Text style={styles.sttHint}>Hold for GPT-4o Transcribe · text after release</Text>
-          {onType ? (
-            <Pressable onPress={() => { setError(null); onType(); }} testID="open-mission-composer" accessibilityRole="button">
-              <Text style={styles.subtitle}>or type a new mission</Text>
-            </Pressable>
-          ) : null}
-        </>
-      )}
+      <View style={styles.stage}>
+        <Animated.View pointerEvents="none" style={[styles.halo, { opacity: haloOpacity, transform: [{ scale: haloScale }] }]} />
+        <Animated.View pointerEvents="none" style={[styles.glow, { opacity: glowOpacity, transform: [{ scale: glowScale }] }]} />
+        <Pressable
+          onPress={() => { if (!longPress.current) onTap(); }}
+          onPressIn={pressIn}
+          onPressOut={() => void pressOut()}
+          disabled={isSubmitting}
+          style={styles.orbButton}
+          accessibilityRole="button"
+          accessibilityLabel="Start a voice mission"
+          testID="voice-orb"
+        >
+          <Animated.View style={[styles.orbBeat, { transform: [{ scale: orbScale }] }]}>
+            <LinearGradient
+              colors={isRecording ? [colors.error, colors.primary] : [colors.primaryBright, colors.secondary]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.ringOuter}
+            >
+              <View style={styles.ringGap}>
+                <LinearGradient colors={["#17182B", "#0C0E1D"]} style={styles.orbInner}>
+                  {isSubmitting ? (
+                    <LoaderCircle color={colors.text} size={43} strokeWidth={1.8} />
+                  ) : (
+                    <AudioLines color={colors.text} size={47} strokeWidth={2.2} />
+                  )}
+                </LinearGradient>
+              </View>
+            </LinearGradient>
+          </Animated.View>
+        </Pressable>
+      </View>
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  wrapper: { alignItems: "center", paddingVertical: spacing.lg },
+  wrapper: { alignItems: "center", paddingVertical: spacing.xl },
+  stage: { width: 220, height: 220, alignItems: "center", justifyContent: "center" },
+  halo: {
+    position: "absolute",
+    top: 10,
+    left: 10,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    borderWidth: 1.5,
+    borderColor: colors.primaryBright,
+  },
   glow: {
     position: "absolute",
-    top: 8,
-    width: 188,
-    height: 188,
-    borderRadius: 94,
+    top: 18,
+    left: 18,
+    width: 184,
+    height: 184,
+    borderRadius: 92,
     backgroundColor: colors.primary,
     ...shadows.glow,
   },
+  orbButton: { width: 176, height: 176, alignItems: "center", justifyContent: "center" },
+  orbBeat: { width: 176, height: 176 },
   ringOuter: {
     width: 176,
     height: 176,
@@ -158,10 +168,5 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.08)",
   },
-  title: { ...type.h2, color: colors.text, marginTop: spacing.xl },
-  subtitle: { ...type.body, color: colors.textSecondary, marginTop: spacing.xs },
-  liveLabel: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: spacing.xs },
-  liveText: { ...type.caption, color: colors.primaryBright },
-  sttHint: { ...type.caption, color: colors.textMuted, marginTop: 4, textAlign: "center" },
   error: { ...type.caption, color: colors.error, marginTop: spacing.sm, textAlign: "center", maxWidth: 300 },
 });

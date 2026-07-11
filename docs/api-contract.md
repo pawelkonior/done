@@ -116,6 +116,10 @@ Sekcja `speech_to_text` zawiera model, status dostępności OpenAI i bezpieczny
 zwraca sekcji ogólnego AI, ponieważ tekstowe misje są interpretowane
 deterministycznie i nie korzystają z zewnętrznego modelu.
 
+Odpowiedź zawiera również `portfolio_automation` z flagami `shadow_mode`,
+`autonomy_enabled`, `automatic_purchases_default: false` oraz ręczną
+`promotion_gate`.
+
 ### `POST /v1/realtime/client-secret`
 
 Tworzy krótko żyjący sekret do bezpośredniej sesji WebRTC. Request:
@@ -140,6 +144,54 @@ Endpoint ma `Cache-Control: no-store`. Standardowy `OPENAI_API_KEY` nigdy nie
 jest zwracany. Serwer dodaje `OpenAI-Safety-Identifier` jako stabilny hash
 wewnętrznego ID. `503 realtime_unavailable` oznacza wyłączoną konfigurację,
 błąd sieci, credentials, quota albo niepoprawną odpowiedź dostawcy.
+
+## Katalog sklepów
+
+### `GET /v1/catalog/offers`
+
+Zwraca produkty wraz ze sklepem, ceną, ilością i efektywną dostępnością.
+Opcjonalne filtry: `q`, `store_id`, `product_id`, `category`,
+`effective_status`, `available`, `min_price_cents`, `max_price_cents`, `sort`,
+`limit` oraz `offset`. `total` jest liczbą rekordów przed paginacją.
+Poniższy przykład jest skrócony; pole `items` powtarza dokładnie listę
+`offers` i zostało pominięte.
+
+```json
+{
+  "offers": [
+    {
+      "store_id": "store-budget",
+      "store_name": "Budget Market",
+      "city": "Warsaw",
+      "store_status": "open",
+      "product_id": "product-water",
+      "sku": "MOCK-DR-001",
+      "product_name": "Still water 1.5 l",
+      "brand": "Clear Spring",
+      "category": "drinks",
+      "unit_label": "1.5 l bottle",
+      "price_cents": 299,
+      "currency": "PLN",
+      "price": 2.99,
+      "price_display": "2.99 PLN",
+      "quantity": 120,
+      "inventory_status": "available",
+      "effective_status": "available",
+      "is_available": true,
+      "updated_at": "2026-07-11T10:00:00Z"
+    }
+  ],
+  "total": 54,
+  "limit": 100,
+  "offset": 0
+}
+```
+
+Dozwolone statusy efektywne to `available`, `low_stock`, `out_of_stock`,
+`discontinued` i `store_unavailable`. Zamknięty sklep wymusza
+`is_available: false`, nawet gdy jego lokalny stan magazynowy jest dodatni.
+Nieznane filtry identyfikatorów zwracają pustą listę z `200`; błędne enumy,
+zakresy lub paginacja zwracają `422`.
 
 ## Misje
 
@@ -289,6 +341,23 @@ Najważniejsze elementy:
 - `order` i `summary` są `null` przed zakończeniem.
 
 Brak misji: `404`.
+
+### Shadow mode portfolio
+
+`POST /v1/missions/{mission_id}/portfolio-shadow` uruchamia jawny shadow run,
+gdy `DONE_PORTFOLIO_SHADOW_MODE=true`. Planner korzysta z aktualnych danych
+katalogu i utrwala decyzję z `execution_mode: "shadow"`, ale nie zmienia
+`basket`, `approval`, `payment_attempts`, `order`, statusu ani revision misji.
+Przy wyłączonej fladze endpoint zwraca `409`.
+
+`GET /v1/missions/{mission_id}/portfolio-shadow-audits` zwraca porównania
+shadow z aktywną decyzją i koszykiem: `snapshot_id`, trigger, rekomendacje,
+różnicę ceny/rekomendacji, czas solvera i `not_executed_reason`.
+
+`GET /v1/portfolio/shadow/telemetry` zwraca agregaty wykonalności, Orange Mode,
+solver time, replan rate i różnic ceny/rekomendacji oraz konfigurację bramki
+promocji. Shadow decyzje nie są uwzględniane w aktywnym `portfolio_decision`
+ani w historii aktywnych decyzji.
 
 ### `GET /v1/missions/{mission_id}/events`
 

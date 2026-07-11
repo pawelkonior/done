@@ -2,6 +2,9 @@ export type MissionStatus =
   | "created"
   | "transcribing"
   | "understanding"
+  | "clarification_required"
+  | "waiting_for_user"
+  | "waiting_for_support"
   | "planning"
   | "searching"
   | "optimizing"
@@ -13,6 +16,19 @@ export type MissionStatus =
   | "failed"
   | "cancelled"
   | "waiting";
+
+export interface ActionRequest {
+  id: string;
+  type: string;
+  reason_code: string;
+  question: string;
+  status: "pending" | "resolved" | "cancelled" | "expired";
+  owner: "user" | "support" | string;
+  options: Array<{ id: string; label: string }>;
+  context?: Record<string, unknown>;
+  created_at: string;
+  expires_at?: string | null;
+}
 
 export interface MissionSummary {
   id: string;
@@ -28,7 +44,7 @@ export interface MissionSummary {
   icon?: "cake" | "laptop" | "cart" | "coffee" | "package";
   accent?: "violet" | "blue" | "green" | "amber";
   recovered_failures?: number;
-  revision?: number;
+  revision: number;
 }
 
 export interface MissionContract {
@@ -59,6 +75,7 @@ export interface BasketItem {
 export interface Basket {
   id: string;
   merchant: string;
+  merchant_id?: string;
   items: BasketItem[];
   subtotal: number;
   delivery_cost: number;
@@ -74,6 +91,47 @@ export interface ApprovalRequest {
   status: "pending" | "approved" | "cancelled" | "expired";
   options: Array<{ id: string; label: string }>;
   created_at: string;
+  plan_hash?: string;
+  merchant_id?: string;
+  amount?: number;
+  currency?: string;
+}
+
+export type PortfolioActionKind = "buy_now" | "wait" | string;
+
+export interface PortfolioAction {
+  need_id: string;
+  quantity: number;
+  product_id: string;
+  product_name: string;
+  merchant_id: string;
+  action: PortfolioActionKind;
+  timing_mode: string;
+  price_signal: string;
+  risk_score: number;
+  lptb?: {
+    lptb: string;
+    p95_delivery_days: number;
+    safety_buffer_days: number;
+    reason: string;
+  } | null;
+  objective_cost: number;
+  explanation: string;
+}
+
+export interface PortfolioDecision {
+  id: string;
+  trigger: string;
+  status: string;
+  snapshot_id: string;
+  selected_merchant_id?: string | null;
+  total: number;
+  currency: string;
+  constraint_report: string[];
+  explanations: string[];
+  solver_metadata: Record<string, unknown>;
+  created_at: string;
+  actions: PortfolioAction[];
 }
 
 export interface MissionEvent {
@@ -94,7 +152,18 @@ export interface DeliveryOption {
   currency: string;
   badge: string;
   selected: boolean;
+  available?: boolean;
   reliability?: number;
+}
+
+export interface MissionOrder {
+  id: string;
+  confirmation_code: string;
+  status: string;
+  total: number;
+  currency: string;
+  delivery_at: string;
+  created_at: string;
 }
 
 export interface MissionMetrics {
@@ -115,9 +184,12 @@ export interface MissionDetail {
   contract: MissionContract | null;
   basket: Basket | null;
   approval: ApprovalRequest | null;
+  portfolio_decision: PortfolioDecision | null;
+  order: MissionOrder | null;
   events: MissionEvent[];
   metrics: MissionMetrics;
   delivery_options: DeliveryOption[];
+  action_requests?: ActionRequest[];
 }
 
 export interface MissionListResponse {
@@ -164,12 +236,12 @@ export interface VoiceMissionInput {
 
 export interface MissionCorrectionInput {
   correction: string;
-  expected_revision?: number;
+  expected_revision: number;
 }
 
 export interface DeliverySelectionInput {
   option_id: string;
-  expected_revision?: number;
+  expected_revision: number;
 }
 
 export interface PaymentMethod {

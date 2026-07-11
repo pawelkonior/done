@@ -31,14 +31,15 @@ export function DeliveryOptions({
       <View style={styles.options} accessibilityRole="radiogroup">
         {options.map((option, index) => {
           const Icon = icons[index] ?? Truck;
+          const unavailable = option.available === false;
           return (
             <Pressable
               key={option.id}
               accessibilityRole="radio"
-              accessibilityState={{ checked: option.selected, disabled: disabled || !onSelect }}
-              disabled={disabled || !onSelect || Boolean(loadingOptionId)}
+              accessibilityState={{ checked: option.selected, disabled: disabled || unavailable || !onSelect }}
+              disabled={disabled || unavailable || !onSelect || Boolean(loadingOptionId)}
               onPress={() => onSelect?.(option.id)}
-              style={({ pressed }) => [styles.option, option.selected && styles.optionSelected, disabled && styles.disabled, pressed && styles.pressed]}
+              style={({ pressed }) => [styles.option, option.selected && styles.optionSelected, (disabled || unavailable) && styles.disabled, pressed && styles.pressed]}
               testID={`delivery-option-${option.id}`}
             >
               <View style={[styles.radio, option.selected && styles.radioSelected]}>
@@ -48,7 +49,7 @@ export function DeliveryOptions({
               <View style={styles.optionText}>
                 <View style={styles.nameRow}>
                   <Text style={styles.name}>{option.name}</Text>
-                  {option.badge ? <Text style={styles.badge}>{option.badge}</Text> : null}
+                  {option.badge ? <Text style={styles.badge}>{unavailable ? "Unavailable" : option.badge}</Text> : null}
                 </View>
                 <Text style={styles.eta}>{option.eta}</Text>
               </View>

@@ -1,4 +1,4 @@
-"""Small, durable SQLite persistence layer used by the demo workflow."""
+"""Small, durable SQLite persistence adapter for local and sandbox workflows."""
 
 from __future__ import annotations
 
@@ -9,6 +9,9 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Iterator
+
+
+CATALOG_SQL_PATH = Path(__file__).resolve().parents[1] / "sql" / "mock_catalog.sql"
 
 
 SCHEMA = """
@@ -101,6 +104,33 @@ CREATE TABLE IF NOT EXISTS missions (
     completed_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS mission_drafts (
+    mission_id TEXT PRIMARY KEY REFERENCES missions(id) ON DELETE CASCADE,
+    transcript TEXT NOT NULL,
+    draft_json TEXT NOT NULL,
+    execution_policy_json TEXT NOT NULL,
+    inject_demo_failures INTEGER NOT NULL DEFAULT 0,
+    version INTEGER NOT NULL DEFAULT 1 CHECK(version > 0),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS action_requests (
+    id TEXT PRIMARY KEY,
+    mission_id TEXT NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
+    action_type TEXT NOT NULL,
+    reason_code TEXT NOT NULL,
+    question TEXT NOT NULL,
+    options_json TEXT NOT NULL,
+    context_json TEXT NOT NULL,
+    status TEXT NOT NULL,
+    owner TEXT NOT NULL DEFAULT 'user',
+    expires_at TEXT,
+    created_at TEXT NOT NULL,
+    resolved_at TEXT,
+    resolution_json TEXT
+);
+
 CREATE TABLE IF NOT EXISTS mission_contracts (
     id TEXT PRIMARY KEY,
     mission_id TEXT NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
@@ -182,6 +212,54 @@ CREATE TABLE IF NOT EXISTS approval_requests (
     resolved_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS approval_evidence (
+    approval_id TEXT PRIMARY KEY REFERENCES approval_requests(id) ON DELETE CASCADE,
+    mission_id TEXT NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
+    plan_hash TEXT NOT NULL,
+    merchant_id TEXT NOT NULL,
+    amount_cents INTEGER NOT NULL CHECK(amount_cents > 0),
+    currency TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS guardrail_attestations (
+    id TEXT PRIMARY KEY,
+    mission_id TEXT NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
+    plan_hash TEXT NOT NULL,
+    passed INTEGER NOT NULL,
+    evidence_json TEXT NOT NULL,
+    attested_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    UNIQUE(mission_id, plan_hash)
+);
+
+CREATE TABLE IF NOT EXISTS inventory_reservations (
+    id TEXT PRIMARY KEY,
+    mission_id TEXT NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
+    plan_hash TEXT NOT NULL,
+    merchant_id TEXT NOT NULL,
+    amount_cents INTEGER NOT NULL CHECK(amount_cents > 0),
+    currency TEXT NOT NULL,
+    status TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    reserved_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS virtual_card_requests (
+    id TEXT PRIMARY KEY,
+    mission_id TEXT NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
+    plan_hash TEXT NOT NULL,
+    merchant_lock TEXT NOT NULL,
+    max_amount_cents INTEGER NOT NULL CHECK(max_amount_cents > 0),
+    currency TEXT NOT NULL,
+    status TEXT NOT NULL,
+    restrictions_json TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS payment_attempts (
     id TEXT PRIMARY KEY,
     mission_id TEXT NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
@@ -220,8 +298,11 @@ CREATE TABLE IF NOT EXISTS orders (
 
 CREATE INDEX IF NOT EXISTS idx_missions_status ON missions(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_events_mission_cursor ON mission_events(mission_id, id);
+CREATE INDEX IF NOT EXISTS idx_actions_mission_status ON action_requests(mission_id, status);
 CREATE INDEX IF NOT EXISTS idx_products_category ON products(category, merchant_id);
 CREATE INDEX IF NOT EXISTS idx_approvals_mission_status ON approval_requests(mission_id, status);
+CREATE INDEX IF NOT EXISTS idx_guardrails_mission_plan ON guardrail_attestations(mission_id, plan_hash);
+CREATE INDEX IF NOT EXISTS idx_reservations_mission_status ON inventory_reservations(mission_id, status);
 CREATE INDEX IF NOT EXISTS idx_payments_mission_created ON payment_attempts(mission_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_failures_mission_status ON failure_injections(mission_id, status);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_user_profiles_email ON user_profiles(email);
@@ -369,6 +450,44 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
         CREATE INDEX IF NOT EXISTS idx_approvals_decision ON approval_requests(decision_id);
         """,
     ),
+    (
+        5,
+        """
+        ALTER TABLE portfolio_decisions
+        ADD COLUMN execution_mode TEXT NOT NULL DEFAULT 'active'
+            CHECK(execution_mode IN ('active', 'shadow'));
+
+        CREATE INDEX IF NOT EXISTS idx_portfolio_decisions_mode
+            ON portfolio_decisions(mission_id, execution_mode, created_at);
+
+        CREATE TABLE IF NOT EXISTS portfolio_shadow_audits (
+            id TEXT PRIMARY KEY,
+            mission_id TEXT NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
+            shadow_decision_id TEXT NOT NULL REFERENCES portfolio_decisions(id),
+            active_decision_id TEXT REFERENCES portfolio_decisions(id),
+            active_basket_id TEXT REFERENCES baskets(id),
+            trigger TEXT NOT NULL,
+            snapshot_id TEXT NOT NULL REFERENCES market_snapshots(id),
+            shadow_status TEXT NOT NULL,
+            shadow_total_cents INTEGER NOT NULL CHECK(shadow_total_cents >= 0),
+            active_decision_total_cents INTEGER,
+            active_basket_total_cents INTEGER,
+            shadow_recommendation_json TEXT NOT NULL,
+            active_recommendation_json TEXT NOT NULL,
+            difference_json TEXT NOT NULL,
+            not_executed_reason TEXT NOT NULL,
+            feasible INTEGER NOT NULL,
+            orange_mode INTEGER NOT NULL,
+            solver_time_ms INTEGER NOT NULL CHECK(solver_time_ms >= 0),
+            price_delta_cents INTEGER,
+            recommendation_changed INTEGER NOT NULL,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_portfolio_shadow_mission_created
+            ON portfolio_shadow_audits(mission_id, created_at);
+        """,
+    ),
 )
 
 
@@ -396,6 +515,12 @@ PRODUCTS = [
     ("napkins-color", "merchant-b", "NA-001", "Kolorowe serwetki", "Paczka 20 serwetek.", "napkins", 899, "PLN", 45, [], ["party"], 4.6, "ambient", "napkins", 1, None),
     ("candles-ten", "merchant-b", "CN-001", "Świeczki urodzinowe", "Zestaw 10 kolorowych świeczek.", "candles", 799, "PLN", 35, [], ["birthday"], 4.5, "ambient", "candles", 1, None),
     ("party-bags", "merchant-c", "PB-001", "Papierowe torby prezentowe", "Zestaw 10 papierowych torebek.", "party bags", 2499, "PLN", 12, [], ["birthday", "plastic-free"], 4.8, "ambient", "party-bags", 1, None),
+    ("gift-science-kit", "merchant-b", "GF-001", "Zestaw eksperymentów 8–12", "Neutralny zestaw doświadczeń dla dzieci w wieku 8–12 lat.", "creative", 6999, "PLN", 18, [], ["gift", "age-8-12", "stem", "vegan"], 4.9, "ambient", "science-gift", 1, None),
+    ("gift-board-game", "merchant-b", "GF-002", "Gra kooperacyjna 8+", "Kooperacyjna gra rodzinna dla dzieci od 8 lat.", "games", 6499, "PLN", 20, [], ["gift", "age-8-12", "cooperative", "vegan"], 4.8, "ambient", "board-game-gift", 1, None),
+    ("gift-adventure-book", "merchant-b", "GF-003", "Książka przygodowa 9–12", "Ilustrowana książka przygodowa dla wieku 9–12 lat.", "books", 3999, "PLN", 30, [], ["gift", "age-9-12", "plastic-free", "vegan"], 4.7, "ambient", "book-gift", 1, None),
+    ("gift-craft-set", "merchant-b", "GF-004", "Zestaw kreatywny 8–12", "Papierowy zestaw do projektów kreatywnych dla wieku 8–12 lat.", "creative", 5499, "PLN", 24, [], ["gift", "age-8-12", "plastic-free", "vegan"], 4.7, "ambient", "craft-gift", 1, None),
+    ("gift-puzzle", "merchant-b", "GF-005", "Puzzle odkrywcy 9+", "Puzzle edukacyjne dla dzieci od 9 lat.", "games", 4499, "PLN", 25, [], ["gift", "age-9-13", "plastic-free", "vegan"], 4.6, "ambient", "puzzle-gift", 1, None),
+    ("gift-premium-robot", "merchant-c", "GF-006", "Robot edukacyjny 10+", "Programowalny robot edukacyjny dla dzieci od 10 lat.", "toys", 14999, "PLN", 8, [], ["gift", "age-10-14", "stem", "vegan"], 4.9, "ambient", "robot-gift", 1, None),
 ]
 
 
@@ -423,6 +548,7 @@ class Database:
             self._apply_migrations(connection)
             self._seed_reference_data(connection)
             connection.commit()
+            connection.executescript(CATALOG_SQL_PATH.read_text(encoding="utf-8"))
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
@@ -452,7 +578,9 @@ class Database:
         with self.transaction() as connection:
             for table in (
                 "optimizer_runs",
+                "portfolio_shadow_audits",
                 "portfolio_actions",
+                "approval_evidence",
                 "approval_requests",
                 "portfolio_decisions",
                 "plan_states",
@@ -463,11 +591,16 @@ class Database:
                 "orders",
                 "failure_injections",
                 "payment_attempts",
+                "virtual_card_requests",
+                "inventory_reservations",
+                "guardrail_attestations",
+                "action_requests",
                 "basket_items",
                 "baskets",
                 "delivery_options",
                 "mission_events",
                 "mission_contracts",
+                "mission_drafts",
                 "missions",
                 "user_settings",
                 "user_profiles",

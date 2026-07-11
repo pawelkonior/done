@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Literal, Protocol
+from typing import Any
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +29,7 @@ class RealtimeSessionPort(Protocol):
         *,
         language: str,
         safety_identifier: str,
+        mission_context: dict[str, Any] | None = None,
     ) -> RealtimeClientSecret: ...
 
     async def health(self) -> RealtimeHealth: ...

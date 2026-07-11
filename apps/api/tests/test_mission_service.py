@@ -56,7 +56,8 @@ def test_text_use_case_uses_deterministic_contract_interpretation(tmp_path: Path
         )
     )
 
-    assert detail["mission"]["title"] == "Birthday party for 10 children"
+    assert detail["mission"]["title"].startswith("Jutro urodziny dla 10 dzieci")
+    assert "Birthday party supplies" not in detail["mission"]["title"]
     assert detail["contract"]["participants"][0]["count"] == 10
     assert detail["contract"]["budget_limit"] == 300
     assert detail["contract"]["currency"] == "PLN"
@@ -65,9 +66,27 @@ def test_text_use_case_uses_deterministic_contract_interpretation(tmp_path: Path
     )
     assert inference_event["payload"] == {
         "goal": "prepare_birthday_party",
-        "confidence": 0.97,
+        "confidence": 1.0,
         "missing_information": [],
+        "ambiguities": [],
     }
+
+
+def test_general_request_uses_transcript_on_card_without_birthday_copy(tmp_path: Path) -> None:
+    application = service(tmp_path)
+    detail = asyncio.run(
+        application.create_from_text(
+            transcript="I want to buy a car",
+            locale="pl-PL",
+            timezone="Europe/Warsaw",
+        )
+    )
+
+    assert detail["mission"]["title"] == "I want to buy a car"
+    assert "urodzin" not in detail["mission"]["latest_update"].casefold()
+    assert detail["action_requests"][0]["question"] == (
+        "Jakie wymagania powinien spełniać ten zakup?"
+    )
 
 
 def test_audio_use_case_uses_transcript_and_marks_voice_input(tmp_path: Path) -> None:

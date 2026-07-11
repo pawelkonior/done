@@ -5,6 +5,18 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 
+def approval_payload(detail: dict) -> dict:
+    approval = detail["approval"]
+    return {
+        "choice": "approve",
+        "expected_revision": detail["mission"]["revision"],
+        "amount": approval["amount"],
+        "currency": approval["currency"],
+        "plan_hash": approval["plan_hash"],
+        "merchant_id": approval["merchant_id"],
+    }
+
+
 PROFILE_KEYS = {
     "id",
     "name",
@@ -179,8 +191,13 @@ def test_merchants_export_and_mission_stats(client: TestClient, transcript: str)
         },
     ).json()
     approval_id = created["approval"]["id"]
+    changed_plan = client.post(
+        f"/v1/approvals/{approval_id}/resolve", json=approval_payload(created)
+    )
+    assert changed_plan.status_code == 200
     completed = client.post(
-        f"/v1/approvals/{approval_id}/resolve", json={"choice": "approve"}
+        f"/v1/approvals/{changed_plan.json()['approval']['id']}/resolve",
+        json=approval_payload(changed_plan.json()),
     )
     assert completed.status_code == 200
 

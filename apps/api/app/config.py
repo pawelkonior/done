@@ -176,3 +176,60 @@ def get_realtime_settings() -> RealtimeSettings:
     """Return one immutable Realtime configuration snapshot per process."""
 
     return RealtimeSettings.from_env()
+
+
+@dataclass(frozen=True, slots=True)
+class PortfolioShadowSettings:
+    """Safe rollout controls for portfolio shadow evaluation.
+
+    Shadow mode records a full planner run but never grants checkout authority.
+    Autonomous execution remains explicitly disabled unless a separate, manual
+    rollout decision enables it.
+    """
+
+    enabled: bool = False
+    autonomy_enabled: bool = False
+    min_shadow_runs: int = 100
+    max_recommendation_diff_rate: float = 0.01
+    max_price_delta_rate: float = 0.02
+
+    def __post_init__(self) -> None:
+        if self.min_shadow_runs < 1:
+            raise ValueError("DONE_PORTFOLIO_SHADOW_MIN_RUNS must be >= 1")
+        for name, value in (
+            ("DONE_PORTFOLIO_SHADOW_MAX_RECOMMENDATION_DIFF_RATE", self.max_recommendation_diff_rate),
+            ("DONE_PORTFOLIO_SHADOW_MAX_PRICE_DELTA_RATE", self.max_price_delta_rate),
+        ):
+            if not 0 <= value <= 1:
+                raise ValueError(f"{name} must be between 0 and 1")
+
+    @classmethod
+    def from_env(cls) -> "PortfolioShadowSettings":
+        return cls(
+            enabled=_env_bool("DONE_PORTFOLIO_SHADOW_MODE", False),
+            autonomy_enabled=_env_bool("DONE_PORTFOLIO_AUTONOMY_ENABLED", False),
+            min_shadow_runs=_env_int("DONE_PORTFOLIO_SHADOW_MIN_RUNS", 100),
+            max_recommendation_diff_rate=_env_float(
+                "DONE_PORTFOLIO_SHADOW_MAX_RECOMMENDATION_DIFF_RATE", 0.01
+            ),
+            max_price_delta_rate=_env_float(
+                "DONE_PORTFOLIO_SHADOW_MAX_PRICE_DELTA_RATE", 0.02
+            ),
+        )
+
+    @property
+    def promotion_gate(self) -> dict[str, object]:
+        return {
+            "minimum_shadow_runs": self.min_shadow_runs,
+            "maximum_recommendation_diff_rate": self.max_recommendation_diff_rate,
+            "maximum_price_delta_rate": self.max_price_delta_rate,
+            "requires_manual_approval": True,
+            "automatic_purchases_default": False,
+        }
+
+
+@lru_cache(maxsize=1)
+def get_portfolio_shadow_settings() -> PortfolioShadowSettings:
+    """Return one immutable portfolio rollout configuration snapshot."""
+
+    return PortfolioShadowSettings.from_env()

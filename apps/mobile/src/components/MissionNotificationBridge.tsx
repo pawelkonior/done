@@ -11,6 +11,9 @@ import type { MissionStatus, MissionSummary } from "@/types/domain";
 
 const notificationStatuses = new Set<MissionStatus>([
   "approval_required",
+  "clarification_required",
+  "waiting_for_user",
+  "waiting_for_support",
   "recovering",
   "completed",
   "failed",
@@ -20,6 +23,11 @@ function notificationCopy(mission: MissionSummary): { title: string; message: st
   switch (mission.status) {
     case "approval_required":
       return { title: `${mission.title} needs your decision`, message: mission.latest_update };
+    case "clarification_required":
+    case "waiting_for_user":
+      return { title: `${mission.title} needs an answer`, message: mission.latest_update };
+    case "waiting_for_support":
+      return { title: `Human support is reviewing ${mission.title}`, message: mission.latest_update };
     case "recovering":
       return { title: `Done is recovering ${mission.title}`, message: mission.latest_update };
     case "completed":
