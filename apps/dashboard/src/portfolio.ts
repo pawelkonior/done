@@ -17,6 +17,7 @@ interface ItemProgress {
   node: NodeId;
   state: ItemState;
   simulated: boolean;
+  route?: CheckoutRoute;
 }
 
 export interface PortfolioSnapshot {
@@ -40,21 +41,21 @@ const STATE_LABEL: Record<ItemState, string> = {
   recovered: "Retry passed",
 };
 
-function simulatedProgress(item: BasketItem, routes: CheckoutRoute[], phase: CheckoutSimulationPhase): ItemProgress | null {
+function simulatedProgress(item: BasketItem, route: CheckoutRoute | undefined, phase: CheckoutSimulationPhase): ItemProgress | null {
   if (phase === "idle") return null;
-  const route = routes.find((candidate) => candidate.items.some((entry) => entry.product_id === item.product_id));
   if (!route) return null;
   if (route.batch === 1) {
-    if (phase === "batch1_processing") return { item, node: "purchase", state: "processing", simulated: true };
-    return { item, node: "result", state: "purchased", simulated: true };
+    if (phase === "batch1_processing") return { item, node: "purchase", state: "processing", simulated: true, route };
+    return { item, node: "result", state: "purchased", simulated: true, route };
   }
-  if (phase === "batch2_declined") return { item, node: "purchase", state: "payment_failed", simulated: true };
-  if (phase === "batch1_purchased") return { item, node: "purchase", state: "ready_to_purchase", simulated: true };
-  return { item, node: "model", state: "planned", simulated: true };
+  if (phase === "batch2_declined") return { item, node: "purchase", state: "payment_failed", simulated: true, route };
+  if (phase === "batch1_purchased") return { item, node: "purchase", state: "ready_to_purchase", simulated: true, route };
+  return { item, node: "model", state: "planned", simulated: true, route };
 }
 
 function progressFor(item: BasketItem, detail: MissionDetail, routes: CheckoutRoute[], phase: CheckoutSimulationPhase): ItemProgress {
-  const simulated = simulatedProgress(item, routes, phase);
+  const route = routes.find((candidate) => candidate.items.some((entry) => entry.product_id === item.product_id));
+  const simulated = simulatedProgress(item, route, phase);
   if (simulated) return simulated;
 
   const lineDeclines = detail.payment_attempts.filter(
@@ -69,14 +70,14 @@ function progressFor(item: BasketItem, detail: MissionDetail, routes: CheckoutRo
   );
   const hasAuthorisedPayment = detail.payment_attempts.some((payment) => payment.status === "authorized");
 
-  if (lineDeclines.length > 0 && !lineRecovered) return { item, node: "purchase", state: "payment_failed", simulated: simulatedFailure };
-  if (lineRecovered) return { item, node: detail.order ? "result" : "purchase", state: "recovered", simulated: simulatedFailure };
-  if (globalDecline && !hasAuthorisedPayment && !detail.order) return { item, node: "purchase", state: "payment_failed", simulated: false };
-  if (detail.order || detail.basket?.status === "ordered") return { item, node: "result", state: "purchased", simulated: false };
-  if (hasAuthorisedPayment) return { item, node: "purchase", state: "paid", simulated: false };
-  if (detail.approval?.status === "pending") return { item, node: "guardrails", state: "awaiting_approval", simulated: false };
-  if (detail.approval?.status === "approved" || detail.funding.status !== "not_ready") return { item, node: "purchase", state: "ready_to_purchase", simulated: false };
-  return { item, node: "model", state: "planned", simulated: false };
+  if (lineDeclines.length > 0 && !lineRecovered) return { item, node: "purchase", state: "payment_failed", simulated: simulatedFailure, route };
+  if (lineRecovered) return { item, node: detail.order ? "result" : "purchase", state: "recovered", simulated: simulatedFailure, route };
+  if (globalDecline && !hasAuthorisedPayment && !detail.order) return { item, node: "purchase", state: "payment_failed", simulated: false, route };
+  if (detail.order || detail.basket?.status === "ordered") return { item, node: "result", state: "purchased", simulated: false, route };
+  if (hasAuthorisedPayment) return { item, node: "purchase", state: "paid", simulated: false, route };
+  if (detail.approval?.status === "pending") return { item, node: "guardrails", state: "awaiting_approval", simulated: false, route };
+  if (detail.approval?.status === "approved" || detail.funding.status !== "not_ready") return { item, node: "purchase", state: "ready_to_purchase", simulated: false, route };
+  return { item, node: "model", state: "planned", simulated: false, route };
 }
 
 function detailFor(progress: ItemProgress): NodeDetail {
@@ -90,7 +91,9 @@ function detailFor(progress: ItemProgress): NodeDetail {
   return {
     title: productName(progress.item.product_id),
     meta: `${progress.item.quantity} × ${STATE_LABEL[progress.state]}`,
-    description: progress.simulated ? "Checkout simulation" : undefined,
+    description: progress.route
+      ? `Connected to ${progress.route.storeName} · ${progress.route.endpoint}${progress.simulated ? " · checkout simulation" : ""}`
+      : progress.simulated ? "Checkout simulation" : "Store route not identified yet",
     tone,
   };
 }
