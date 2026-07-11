@@ -643,19 +643,19 @@ export async function selectDeliveryOption(missionId: string, input: DeliverySel
   return normalizeDetail(raw);
 }
 
-<<<<<<< HEAD
 function revisionHeaders(expectedRevision?: number): HeadersInit | undefined {
   return typeof expectedRevision === "number"
     ? { "If-Match": `W/"${expectedRevision}"` }
     : undefined;
-=======
+}
+
 export async function replanMission(missionId: string, expectedRevision: number) {
   const raw = await apiFetch<JsonRecord>(`/v1/missions/${missionId}/replan`, {
     method: "POST",
     body: JSON.stringify({ expected_revision: expectedRevision }),
+    headers: revisionHeaders(expectedRevision),
   });
   return normalizeDetail(raw);
->>>>>>> codex/full-real-app-audit
 }
 
 export async function cancelMission(missionId: string, expectedRevision: number) {

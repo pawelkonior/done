@@ -16,11 +16,8 @@ from app.domain.portfolio.model import (
     PriceSignal,
 )
 from app.domain.portfolio.policies import TimingGate
-<<<<<<< HEAD
 from app.main import create_app
-=======
 from app.domain.mission.catalog import CatalogPlanningAgent, PlannedCatalogLine
->>>>>>> codex/full-real-app-audit
 
 
 def _create(client: TestClient, transcript: str) -> dict:
@@ -281,7 +278,6 @@ def test_contract_owns_needs_and_revises_them_with_participant_count(
     assert detail["approval"]["decision_id"] == detail["portfolio_decision"]["id"]
 
 
-<<<<<<< HEAD
 def test_shadow_mode_records_comparison_without_touching_checkout_state(
     tmp_path: Path, transcript: str
 ) -> None:
@@ -367,7 +363,8 @@ def test_shadow_mode_and_autonomy_are_disabled_by_default(
     assert capabilities["autonomy_enabled"] is False
     assert capabilities["automatic_purchases_default"] is False
     assert capabilities["promotion_gate"]["requires_manual_approval"] is True
-=======
+
+
 def test_gift_checkout_never_references_a_party_portfolio_decision(
     client: TestClient,
 ) -> None:
@@ -454,4 +451,3 @@ def test_disagreeing_planners_stop_before_approval_and_funding(
         if item["reason_code"] == "PLANNERS_DISAGREE"
     )
     assert action["owner"] == "support"
->>>>>>> codex/full-real-app-audit

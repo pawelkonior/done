@@ -15,11 +15,7 @@ import { EventTimeline } from "@/components/EventTimeline";
 import { GlassCard } from "@/components/GlassCard";
 import { IconTile } from "@/components/IconTile";
 import { MetricsGrid } from "@/components/MetricsGrid";
-<<<<<<< HEAD
-import { MissionComposer } from "@/components/MissionComposer";
 import { MissionTrackingCard } from "@/components/MissionTrackingCard";
-=======
->>>>>>> codex/full-real-app-audit
 import { LiveVoiceSheet } from "@/components/LiveVoiceSheet";
 import { MissionTimeline } from "@/components/MissionTimeline";
 import { ProgressBar } from "@/components/ProgressBar";
