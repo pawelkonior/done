@@ -25,6 +25,7 @@ from .application.mission_service import (
     MissionServiceSettings,
     SpeechInputUnavailableError,
 )
+from .application.catalog_service import CatalogApplicationService
 from .application.portfolio_planning_service import PortfolioPlanningService
 from .application.ports.ai import SpeechToTextPort
 from .application.ports.realtime import RealtimeSessionPort
@@ -44,6 +45,8 @@ from .infrastructure.ai.openai_transcription import (
     OpenAITranscriptionError,
 )
 from .infrastructure.persistence.user_repository import SQLiteUserRepository
+from .infrastructure.persistence.catalog_repository import SQLiteCatalogRepository
+from .presentation.catalog_router import create_catalog_router
 from .presentation.user_router import create_user_router
 from .schemas import (
     ApprovalResolveRequest,
@@ -141,6 +144,7 @@ def create_app(
     portfolio_planner = PortfolioPlanningService()
     workflow = MissionWorkflow(database, portfolio_planner=portfolio_planner)
     user_service = UserApplicationService(SQLiteUserRepository(database))
+    catalog_service = CatalogApplicationService(SQLiteCatalogRepository(database))
     runtime_settings = mission_settings or MissionServiceSettings.from_env()
     transcription_settings = get_transcription_settings()
     live_settings = realtime_settings or get_realtime_settings()
@@ -177,6 +181,7 @@ def create_app(
     application.state.workflow = workflow
     application.state.portfolio_planner = portfolio_planner
     application.state.user_service = user_service
+    application.state.catalog_service = catalog_service
     application.state.mission_service = mission_service
     application.state.realtime = resolved_realtime
     allowed_origins = [
@@ -196,6 +201,7 @@ def create_app(
         expose_headers=["ETag", "X-Request-ID"],
     )
     application.include_router(create_user_router(user_service))
+    application.include_router(create_catalog_router(catalog_service))
 
     @application.middleware("http")
     async def disable_api_caching(request: Request, call_next):  # type: ignore[no-untyped-def]
