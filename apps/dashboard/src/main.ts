@@ -9,7 +9,6 @@ import type { LoopEvent } from "./types";
 
 const EVENTS_POLL_MS = 1000;
 const MISSIONS_POLL_MS = 5000;
-const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled"]);
 
 type Mode = "connecting" | "live" | "replay";
 
@@ -25,6 +24,8 @@ let missionId: string | null = null;
 let cursor = 0;
 let eventsInFlight = false;
 let replayTimer: number | undefined;
+/** Bumped on every view reset so stale in-flight responses are discarded. */
+let generation = 0;
 
 function setMode(next: Mode, label: string): void {
   mode = next;
@@ -59,6 +60,7 @@ function resetView(): void {
   graph.reset();
   ticker.reset();
   cursor = 0;
+  generation += 1;
 }
 
 // ---------------------------------------------------------------- replay
@@ -94,6 +96,7 @@ function enterLive(id: string, title: string, status: string): void {
     stopReplay();
     missionId = id;
     resetView();
+    void pollEvents(); // Fill the new mission's history without waiting a tick.
   }
   setMode("live", "live");
   setMission(title, status);
@@ -102,8 +105,12 @@ function enterLive(id: string, title: string, status: string): void {
 async function pollEvents(): Promise<void> {
   if (mode !== "live" || !missionId || eventsInFlight) return;
   eventsInFlight = true;
+  const requestGeneration = generation;
   try {
     const page = await fetchEvents(missionId, cursor);
+    if (requestGeneration !== generation) {
+      return; // The view switched missions while this request was in flight.
+    }
     cursor = page.cursor;
     for (const event of page.events) {
       dispatch(event);
@@ -121,7 +128,10 @@ async function pollEvents(): Promise<void> {
 async function pollMissions(): Promise<void> {
   try {
     const missions = await fetchMissions();
-    const followed = missions.find((m) => !TERMINAL_STATUSES.has(m.status)) ?? missions[0];
+    // Follow whatever the system touched last (the list is sorted by
+    // updated_at). A mission that just completed stays on screen instead
+    // of losing the finale to a stale clarification draft.
+    const followed = missions[0];
     if (followed) {
       enterLive(followed.id, followed.title, followed.status);
     } else {
