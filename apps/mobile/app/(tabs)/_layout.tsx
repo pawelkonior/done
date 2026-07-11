@@ -8,9 +8,8 @@ export default function TabsLayout() {
       <Tabs.Screen name="missions" options={{ title: "Missions" }} />
       <Tabs.Screen name="completed" options={{ title: "Completed" }} />
       <Tabs.Screen name="settings" options={{ title: "Settings" }} />
-      <Tabs.Screen name="profile" options={{ title: "Profile" }} />
+      <Tabs.Screen name="profile" options={{ title: "Profile", href: null }} />
       <Tabs.Screen name="mission/[id]" options={{ href: null }} />
     </Tabs>
   );
 }
-

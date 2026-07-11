@@ -22,7 +22,19 @@ def create(client: TestClient) -> dict:
     return response.json()
 
 
-def test_autonomous_low_risk_policy_skips_approval_and_executes(
+def approval_payload(detail: dict) -> dict:
+    approval = detail["approval"]
+    return {
+        "choice": "approve",
+        "expected_revision": detail["mission"]["revision"],
+        "amount": approval["amount"],
+        "currency": approval["currency"],
+        "plan_hash": approval["plan_hash"],
+        "merchant_id": approval["merchant_id"],
+    }
+
+
+def test_autonomous_policy_still_requires_exact_funding_consent(
     client: TestClient,
 ) -> None:
     updated = client.patch(
@@ -33,10 +45,16 @@ def test_autonomous_low_risk_policy_skips_approval_and_executes(
 
     mission = create(client)
 
-    assert mission["mission"]["status"] == "completed"
-    assert mission["mission"]["requires_approval"] is False
-    assert mission["approval"] is None
-    assert "approval.skipped" in [event["type"] for event in mission["events"]]
+    assert mission["mission"]["status"] == "approval_required"
+    assert mission["mission"]["requires_approval"] is True
+    assert mission["approval"]["status"] == "pending"
+    event_types = [event["type"] for event in mission["events"]]
+    assert "approval.skipped" in event_types
+    assert "funding.approval_required" in event_types
+    with client.app.state.database.reader() as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) AS count FROM virtual_card_requests"
+        ).fetchone()["count"] == 0
 
 
 def test_threshold_policy_only_interrupts_at_or_above_threshold(
@@ -56,8 +74,11 @@ def test_threshold_policy_only_interrupts_at_or_above_threshold(
     )
     assert high.status_code == 200, high.text
     automatic = create(client)
-    assert automatic["mission"]["status"] == "completed"
-    assert automatic["approval"] is None
+    assert automatic["mission"]["status"] == "approval_required"
+    assert automatic["approval"]["status"] == "pending"
+    assert "funding.approval_required" in [
+        event["type"] for event in automatic["events"]
+    ]
 
 
 def test_disabling_safe_recovery_stops_on_first_recoverable_failure(
@@ -74,17 +95,27 @@ def test_disabling_safe_recovery_stops_on_first_recoverable_failure(
     assert updated.status_code == 200, updated.text
 
     mission = create(client)
+    approved = client.post(
+        f"/v1/approvals/{mission['approval']['id']}/resolve",
+        json=approval_payload(mission),
+    )
+    assert approved.status_code == 200, approved.text
+    paused = approved.json()
 
-    assert mission["mission"]["status"] == "failed"
-    assert mission["basket"]["status"] == "intervention_required"
+    assert paused["mission"]["status"] == "waiting_for_user"
+    assert paused["basket"]["status"] == "intervention_required"
+    assert any(
+        action["type"] == "recovery_decision" and action["status"] == "pending"
+        for action in paused["action_requests"]
+    )
     blocked = next(
         event
-        for event in mission["events"]
+        for event in paused["events"]
         if event["type"] == "recovery.blocked_by_policy"
     )
     assert blocked["payload"]["safe_recovery_enabled"] is False
     catalog = next(
-        event for event in mission["events"] if event["type"] == "catalog.searched"
+        event for event in paused["events"] if event["type"] == "catalog.searched"
     )
     assert catalog["payload"]["preferred_match"] is True
 

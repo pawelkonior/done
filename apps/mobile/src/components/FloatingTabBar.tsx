@@ -1,5 +1,5 @@
 import type { BottomTabBarProps } from "expo-router/build/react-navigation/bottom-tabs";
-import { CircleCheck, House, ListTodo, Settings, UserRound, type LucideIcon } from "lucide-react-native";
+import { CircleCheck, House, ListTodo, Settings, type LucideIcon } from "lucide-react-native";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, contentMaxWidth, radii, spacing, type } from "@/theme/tokens";
@@ -9,7 +9,6 @@ const items: Record<string, { label: string; Icon: LucideIcon }> = {
   missions: { label: "Missions", Icon: ListTodo },
   completed: { label: "Completed", Icon: CircleCheck },
   settings: { label: "Settings", Icon: Settings },
-  profile: { label: "Profile", Icon: UserRound },
 };
 
 export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {

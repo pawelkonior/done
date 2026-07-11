@@ -12,6 +12,8 @@ import {
   listMissions,
   listMerchants,
   resetDemo,
+  requestHumanSupport,
+  resolveActionRequest,
   resolveApproval,
   selectDeliveryOption,
   updateUserProfile,
@@ -89,8 +91,32 @@ export function useCreateVoiceMission() {
 export function useResolveApproval(missionId?: string) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({ approvalId, choice }: { approvalId: string; choice: "approve" | "review" | "cancel" }) =>
-      resolveApproval(approvalId, choice),
+    mutationFn: ({
+      approvalId,
+      choice,
+      expectedRevision,
+      amount,
+      currency,
+      planHash,
+      merchantId,
+      voiceTranscript,
+    }: {
+      approvalId: string;
+      choice: "approve" | "review" | "cancel";
+      expectedRevision: number;
+      amount?: number;
+      currency?: string;
+      planHash?: string;
+      merchantId?: string;
+      voiceTranscript?: string;
+    }) => resolveApproval(approvalId, choice, {
+      expected_revision: expectedRevision,
+      amount,
+      currency,
+      plan_hash: planHash,
+      merchant_id: merchantId,
+      voice_transcript: voiceTranscript,
+    }),
     onSuccess: (result) => {
       if (missionId) client.setQueryData(["mission", missionId], result.detail);
       client.invalidateQueries({ queryKey: ["mission", missionId] });
@@ -124,7 +150,41 @@ export function useSelectDeliveryOption(missionId: string) {
 export function useCancelMission(missionId: string) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: () => cancelMission(missionId),
+    mutationFn: (expectedRevision: number) => cancelMission(missionId, expectedRevision),
+    onSuccess: (detail) => refreshMissionQueries(client, missionId, detail),
+  });
+}
+
+export function useResolveActionRequest(missionId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      actionRequestId,
+      choice,
+      voiceTranscript,
+      expectedRevision,
+    }: {
+      actionRequestId: string;
+      choice: string;
+      voiceTranscript?: string;
+      expectedRevision: number;
+    }) => resolveActionRequest(actionRequestId, {
+      choice,
+      voice_transcript: voiceTranscript,
+      expected_revision: expectedRevision,
+    }),
+    onSuccess: (detail) => refreshMissionQueries(client, missionId, detail),
+  });
+}
+
+export function useRequestHumanSupport(missionId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { reason?: string; expectedRevision: number }) =>
+      requestHumanSupport(missionId, {
+        reason: input.reason,
+        expected_revision: input.expectedRevision,
+      }),
     onSuccess: (detail) => refreshMissionQueries(client, missionId, detail),
   });
 }

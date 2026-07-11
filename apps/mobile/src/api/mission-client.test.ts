@@ -64,10 +64,14 @@ describe("mission API client", () => {
   it("selects delivery using the option_id contract and supports cancellation", async () => {
     fetchMock.mockResolvedValue(response(detail));
     await selectDeliveryOption("mission-1", { option_id: "standard", expected_revision: 2 });
-    await cancelMission("mission-1");
+    await cancelMission("mission-1", 2);
 
     expect(fetchMock.mock.calls[0]?.[1]).toEqual(expect.objectContaining({ method: "PUT", body: JSON.stringify({ option_id: "standard", expected_revision: 2 }) }));
     expect(fetchMock.mock.calls[1]?.[0]).toEqual(expect.stringContaining("/v1/missions/mission-1/cancel"));
+    expect(fetchMock.mock.calls[1]?.[1]).toEqual(expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({ expected_revision: 2 }),
+    }));
   });
 
   it("serializes search, action, date and sort filters", async () => {
@@ -81,6 +85,20 @@ describe("mission API client", () => {
     expect(url).toContain("completed_to=2026-07-11");
     expect(url).toContain("sort=oldest");
     expect(url).toContain("requires_action=false");
+  });
+
+  it("adds the optional private-deployment bearer token without changing demo mode", async () => {
+    const previousToken = process.env.EXPO_PUBLIC_API_ACCESS_TOKEN;
+    process.env.EXPO_PUBLIC_API_ACCESS_TOKEN = "test-access-token";
+    fetchMock.mockResolvedValue(response({ items: [], total: 0 }));
+    try {
+      await listMissions();
+      const headers = new Headers(fetchMock.mock.calls[0]?.[1]?.headers);
+      expect(headers.get("Authorization")).toBe("Bearer test-access-token");
+    } finally {
+      if (previousToken === undefined) delete process.env.EXPO_PUBLIC_API_ACCESS_TOKEN;
+      else process.env.EXPO_PUBLIC_API_ACCESS_TOKEN = previousToken;
+    }
   });
 
   it("uploads a voice recording as FormData without forcing a JSON content type", async () => {

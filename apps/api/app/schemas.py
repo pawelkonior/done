@@ -1,4 +1,4 @@
-"""HTTP request schemas for the demo API."""
+"""HTTP request schemas for the Done API."""
 
 from __future__ import annotations
 
@@ -38,6 +38,26 @@ class MissionCreateRequest(BaseModel):
 class ApprovalResolveRequest(BaseModel):
     choice: Literal["approve", "review", "cancel"]
     voice_transcript: str | None = Field(default=None, max_length=4_000)
+    expected_revision: int | None = Field(default=None, ge=1)
+    amount: float | None = Field(default=None, gt=0)
+    currency: Literal["PLN", "EUR", "USD"] | None = None
+    plan_hash: str | None = Field(default=None, min_length=8, max_length=200)
+    merchant_id: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+class ActionResolveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    choice: str = Field(min_length=1, max_length=80, pattern=r"^[a-z0-9_]+$")
+    voice_transcript: str | None = Field(default=None, max_length=4_000)
+    expected_revision: int | None = Field(default=None, ge=1)
+
+
+class HumanSupportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str | None = Field(default=None, max_length=500)
+    expected_revision: int | None = Field(default=None, ge=1)
 
 
 class FailureInjectionRequest(BaseModel):
@@ -73,6 +93,12 @@ class ReplanMissionRequest(BaseModel):
     expected_revision: int | None = Field(default=None, ge=1)
 
 
+class MissionCancelRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: int | None = Field(default=None, ge=1)
+
+
 class DeliveryOptionSelectionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -98,6 +124,7 @@ class RealtimeClientSecretRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     language: str = Field(default="pl-PL", min_length=2, max_length=32)
+    mission_id: str | None = Field(default=None, min_length=1, max_length=200)
 
     @field_validator("language")
     @classmethod

@@ -15,6 +15,7 @@ class BasketLine:
     unit_price: Money
     allergens: frozenset[str]
     tags: frozenset[str]
+    available_quantity: int | None = None
 
     @property
     def total(self) -> Money:
@@ -109,22 +110,72 @@ class BasketPolicy:
                 )
             )
 
+        supported_operators = {
+            ConstraintKind.ALLERGEN: "exclude",
+            ConstraintKind.PROHIBITED_CATEGORY: "exclude",
+            ConstraintKind.MATERIAL: "exclude",
+            ConstraintKind.CUSTOM: "require",
+            ConstraintKind.BUDGET: "less_than_or_equal",
+            ConstraintKind.DEADLINE: "before_or_at",
+        }
+        for constraint in contract.hard_constraints:
+            expected_operator = supported_operators.get(constraint.kind)
+            if expected_operator is None or constraint.operator != expected_operator:
+                violations.append(
+                    PolicyViolation(
+                        "UNSUPPORTED_HARD_CONSTRAINT",
+                        (
+                            f"Constraint {constraint.kind.value}:{constraint.operator} "
+                            "cannot be proven by the policy engine"
+                        ),
+                    )
+                )
+
         excluded_allergens = {
             str(constraint.value).casefold()
             for constraint in contract.hard_constraints
             if constraint.kind == ConstraintKind.ALLERGEN
+            and constraint.operator == "exclude"
         }
         prohibited_categories = {
             str(constraint.value).casefold()
             for constraint in contract.hard_constraints
             if constraint.kind == ConstraintKind.PROHIBITED_CATEGORY
+            and constraint.operator == "exclude"
         }
         prohibited_materials = {
             str(constraint.value).casefold()
             for constraint in contract.hard_constraints
             if constraint.kind == ConstraintKind.MATERIAL
+            and constraint.operator == "exclude"
         }
+        dietary_requirements = {
+            str(constraint.value).casefold()
+            for constraint in contract.hard_constraints
+            if constraint.kind == ConstraintKind.CUSTOM
+            and constraint.operator == "require"
+        }
+        unsupported_custom = dietary_requirements - {"vegan", "vegetarian"}
+        for value in sorted(unsupported_custom):
+            violations.append(
+                PolicyViolation(
+                    "UNSUPPORTED_HARD_CONSTRAINT",
+                    f"Custom hard constraint {value!r} cannot be proven",
+                )
+            )
+        food_categories = {"snacks", "drinks", "cake", "food", "beverages"}
         for line in basket.lines:
+            if (
+                line.available_quantity is not None
+                and line.quantity > line.available_quantity
+            ):
+                violations.append(
+                    PolicyViolation(
+                        "INSUFFICIENT_INVENTORY",
+                        f"Product {line.product_id} does not have enough stock",
+                        repairable=True,
+                    )
+                )
             allergens = {allergen.casefold() for allergen in line.allergens}
             if excluded_allergens & allergens:
                 violations.append(
@@ -141,6 +192,19 @@ class BasketPolicy:
                     )
                 )
             tags = {tag.casefold() for tag in line.tags}
+            if line.category.casefold() in food_categories:
+                for requirement in dietary_requirements & {"vegan", "vegetarian"}:
+                    if requirement not in tags:
+                        violations.append(
+                            PolicyViolation(
+                                "DIETARY_CONSTRAINT_VIOLATION",
+                                (
+                                    f"Product {line.product_id} is not verified "
+                                    f"as {requirement}"
+                                ),
+                                repairable=True,
+                            )
+                        )
             if prohibited_materials and not all(
                 f"{material}-free" in tags for material in prohibited_materials
             ):

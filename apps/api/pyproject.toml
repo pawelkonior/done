@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "done-demo-api"
 version = "0.1.0"
-description = "Deterministic FastAPI backend for the Done commerce-agent demo"
+description = "Voice-first commerce-agent API with auditable guardrails and funding gates"
 requires-python = ">=3.13,<3.14"
 dependencies = [
     "fastapi>=0.115,<1",

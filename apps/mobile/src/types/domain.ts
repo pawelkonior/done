@@ -2,6 +2,9 @@ export type MissionStatus =
   | "created"
   | "transcribing"
   | "understanding"
+  | "clarification_required"
+  | "waiting_for_user"
+  | "waiting_for_support"
   | "planning"
   | "searching"
   | "optimizing"
@@ -13,6 +16,19 @@ export type MissionStatus =
   | "failed"
   | "cancelled"
   | "waiting";
+
+export interface ActionRequest {
+  id: string;
+  type: string;
+  reason_code: string;
+  question: string;
+  status: "pending" | "resolved" | "cancelled" | "expired";
+  owner: "user" | "support" | string;
+  options: Array<{ id: string; label: string }>;
+  context?: Record<string, unknown>;
+  created_at: string;
+  expires_at?: string | null;
+}
 
 export interface MissionSummary {
   id: string;
@@ -28,7 +44,7 @@ export interface MissionSummary {
   icon?: "cake" | "laptop" | "cart" | "coffee" | "package";
   accent?: "violet" | "blue" | "green" | "amber";
   recovered_failures?: number;
-  revision?: number;
+  revision: number;
 }
 
 export interface MissionContract {
@@ -59,6 +75,7 @@ export interface BasketItem {
 export interface Basket {
   id: string;
   merchant: string;
+  merchant_id?: string;
   items: BasketItem[];
   subtotal: number;
   delivery_cost: number;
@@ -74,6 +91,10 @@ export interface ApprovalRequest {
   status: "pending" | "approved" | "cancelled" | "expired";
   options: Array<{ id: string; label: string }>;
   created_at: string;
+  plan_hash?: string;
+  merchant_id?: string;
+  amount?: number;
+  currency?: string;
 }
 
 export interface MissionEvent {
@@ -118,6 +139,7 @@ export interface MissionDetail {
   events: MissionEvent[];
   metrics: MissionMetrics;
   delivery_options: DeliveryOption[];
+  action_requests?: ActionRequest[];
 }
 
 export interface MissionListResponse {
@@ -164,12 +186,12 @@ export interface VoiceMissionInput {
 
 export interface MissionCorrectionInput {
   correction: string;
-  expected_revision?: number;
+  expected_revision: number;
 }
 
 export interface DeliverySelectionInput {
   option_id: string;
-  expected_revision?: number;
+  expected_revision: number;
 }
 
 export interface PaymentMethod {

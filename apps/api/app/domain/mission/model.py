@@ -13,6 +13,8 @@ class MissionStatus(StrEnum):
     TRANSCRIBING = "transcribing"
     UNDERSTANDING = "understanding"
     CLARIFICATION_REQUIRED = "clarification_required"
+    WAITING_FOR_USER = "waiting_for_user"
+    WAITING_FOR_SUPPORT = "waiting_for_support"
     PLANNING = "planning"
     SEARCHING = "searching"
     OPTIMIZING = "optimizing"
@@ -33,19 +35,58 @@ ALLOWED_TRANSITIONS: dict[MissionStatus, frozenset[MissionStatus]] = {
     MissionStatus.CREATED: frozenset({MissionStatus.TRANSCRIBING, MissionStatus.UNDERSTANDING}),
     MissionStatus.TRANSCRIBING: frozenset({MissionStatus.UNDERSTANDING, MissionStatus.FAILED}),
     MissionStatus.UNDERSTANDING: frozenset(
-        {MissionStatus.CLARIFICATION_REQUIRED, MissionStatus.PLANNING, MissionStatus.FAILED}
+        {
+            MissionStatus.CLARIFICATION_REQUIRED,
+            MissionStatus.WAITING_FOR_USER,
+            MissionStatus.PLANNING,
+            MissionStatus.FAILED,
+        }
     ),
     MissionStatus.CLARIFICATION_REQUIRED: frozenset(
-        {MissionStatus.UNDERSTANDING, MissionStatus.CANCELLED}
+        {
+            MissionStatus.UNDERSTANDING,
+            MissionStatus.WAITING_FOR_SUPPORT,
+            MissionStatus.CANCELLED,
+        }
     ),
-    MissionStatus.PLANNING: frozenset({MissionStatus.SEARCHING, MissionStatus.FAILED}),
-    MissionStatus.SEARCHING: frozenset({MissionStatus.OPTIMIZING, MissionStatus.FAILED}),
-    MissionStatus.OPTIMIZING: frozenset({MissionStatus.VALIDATING, MissionStatus.FAILED}),
+    MissionStatus.WAITING_FOR_USER: frozenset(
+        {
+            MissionStatus.UNDERSTANDING,
+            MissionStatus.PLANNING,
+            MissionStatus.VALIDATING,
+            MissionStatus.EXECUTING,
+            MissionStatus.WAITING_FOR_SUPPORT,
+            MissionStatus.CANCELLED,
+        }
+    ),
+    MissionStatus.WAITING_FOR_SUPPORT: frozenset(
+        {
+            MissionStatus.WAITING_FOR_USER,
+            MissionStatus.PLANNING,
+            MissionStatus.VALIDATING,
+            MissionStatus.CANCELLED,
+        }
+    ),
+    MissionStatus.PLANNING: frozenset(
+        {MissionStatus.SEARCHING, MissionStatus.WAITING_FOR_USER, MissionStatus.FAILED}
+    ),
+    MissionStatus.SEARCHING: frozenset(
+        {
+            MissionStatus.OPTIMIZING,
+            MissionStatus.WAITING_FOR_USER,
+            MissionStatus.WAITING_FOR_SUPPORT,
+            MissionStatus.FAILED,
+        }
+    ),
+    MissionStatus.OPTIMIZING: frozenset(
+        {MissionStatus.VALIDATING, MissionStatus.WAITING_FOR_USER, MissionStatus.FAILED}
+    ),
     MissionStatus.VALIDATING: frozenset(
         {
             MissionStatus.APPROVAL_REQUIRED,
             MissionStatus.EXECUTING,
             MissionStatus.RECOVERING,
+            MissionStatus.WAITING_FOR_USER,
             MissionStatus.FAILED,
         }
     ),
@@ -54,10 +95,16 @@ ALLOWED_TRANSITIONS: dict[MissionStatus, frozenset[MissionStatus]] = {
             MissionStatus.PLANNING,
             MissionStatus.EXECUTING,
             MissionStatus.CANCELLED,
+            MissionStatus.WAITING_FOR_USER,
         }
     ),
     MissionStatus.EXECUTING: frozenset(
-        {MissionStatus.RECOVERING, MissionStatus.COMPLETED, MissionStatus.FAILED}
+        {
+            MissionStatus.RECOVERING,
+            MissionStatus.WAITING_FOR_USER,
+            MissionStatus.COMPLETED,
+            MissionStatus.FAILED,
+        }
     ),
     MissionStatus.RECOVERING: frozenset(
         {
@@ -65,6 +112,8 @@ ALLOWED_TRANSITIONS: dict[MissionStatus, frozenset[MissionStatus]] = {
             MissionStatus.EXECUTING,
             MissionStatus.COMPLETED,
             MissionStatus.APPROVAL_REQUIRED,
+            MissionStatus.WAITING_FOR_USER,
+            MissionStatus.WAITING_FOR_SUPPORT,
             MissionStatus.FAILED,
         }
     ),
@@ -212,4 +261,3 @@ class Mission:
         )
         self.events.append(event)
         return event
-

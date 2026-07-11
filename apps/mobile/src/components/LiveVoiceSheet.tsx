@@ -12,16 +12,21 @@ import {
 import { AudioLines, Check, Keyboard, Mic2, RefreshCw, Sparkles, X } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { getRealtimeClientSecret } from "@/api/client";
-import type { CreateMissionResponse } from "@/types/domain";
+import type { CreateMissionResponse, MissionDetail } from "@/types/domain";
 import {
+  parseRealtimeCommand,
   parseTranscriptFailure,
   parseTranscriptOrderEvent,
-  parseSubmitMissionCall,
   parseTranscriptEvent,
   realtimeActivity,
   realtimeInputActivity,
   realtimeServerError,
+  type RealtimeCommand,
 } from "@/realtime/events";
+import {
+  executeMissionRealtimeCommand,
+  MissionCommandRejected,
+} from "@/realtime/mission-commands";
 import { RealtimeTranscriptBuffer } from "@/realtime/transcript";
 import { createRealtimeTransport } from "@/realtime/transport";
 import type { RealtimeTransport } from "@/realtime/transport.types";
@@ -37,15 +42,15 @@ type LiveStatus =
   | "complete"
   | "error";
 
-const statusCopy: Record<LiveStatus, { title: string; subtitle: string }> = {
-  connecting: { title: "Connecting…", subtitle: "Creating a secure live voice session" },
-  ready: { title: "Mic is live", subtitle: "Start speaking — your words will appear below" },
-  listening: { title: "I hear you", subtitle: "Your voice is reaching Realtime now" },
-  thinking: { title: "Thinking…", subtitle: "Turning the conversation into a complete mission" },
-  speaking: { title: "Speaking", subtitle: "You can interrupt at any time" },
-  submitting: { title: "Creating mission…", subtitle: "Deterministic safety rules are validating it" },
-  complete: { title: "Mission ready", subtitle: "Open it to review progress and approvals" },
-  error: { title: "Live voice unavailable", subtitle: "OpenAI transcription and text are still available" },
+const statusCopy: Record<LiveStatus, string> = {
+  connecting: "Connecting…",
+  ready: "Ready",
+  listening: "Listening…",
+  thinking: "Thinking…",
+  speaking: "Speaking",
+  submitting: "Creating mission…",
+  complete: "Mission ready",
+  error: "Connection unavailable",
 };
 
 type InputStatus =
@@ -57,14 +62,14 @@ type InputStatus =
   | "captured"
   | "error";
 
-const inputStatusCopy: Record<InputStatus, { label: string; placeholder: string }> = {
-  connecting: { label: "CONNECTING", placeholder: "Connecting the microphone to Realtime…" },
-  ready: { label: "MIC LIVE", placeholder: "Start speaking. Your words will appear here." },
-  hearing: { label: "VOICE DETECTED", placeholder: "I hear your voice — text will arrive after a short pause…" },
-  transcribing: { label: "TRANSCRIBING", placeholder: "Turning this turn into text…" },
-  streaming: { label: "LIVE TEXT", placeholder: "Streaming your words…" },
-  captured: { label: "CAPTURED", placeholder: "Your last turn was captured." },
-  error: { label: "TEXT ERROR", placeholder: "Audio is live, but this turn could not be transcribed." },
+const inputStatusCopy: Record<InputStatus, string> = {
+  connecting: "Connecting…",
+  ready: "Start speaking",
+  hearing: "Listening…",
+  transcribing: "One moment…",
+  streaming: "Listening…",
+  captured: "Ready for more",
+  error: "I couldn’t capture that. Try again.",
 };
 
 const errorMessage = (error: unknown) =>
@@ -76,14 +81,20 @@ export function LiveVoiceSheet({
   onClose,
   onUseText,
   onSubmitTranscript,
-  onOpenMission,
+  onMissionCreated,
+  missionId: activeMissionId,
+  onMissionUpdated,
+  onMissionRefreshRequested,
 }: {
   visible: boolean;
   language: string;
   onClose: () => void;
   onUseText: () => void;
-  onSubmitTranscript: (transcript: string) => Promise<CreateMissionResponse>;
-  onOpenMission: (missionId: string) => void;
+  onSubmitTranscript?: (transcript: string) => Promise<CreateMissionResponse>;
+  onMissionCreated?: (missionId: string) => void;
+  missionId?: string;
+  onMissionUpdated?: (detail: MissionDetail) => void;
+  onMissionRefreshRequested?: () => void;
 }) {
   const [status, setStatus] = useState<LiveStatus>("connecting");
   const [error, setError] = useState<string | null>(null);
@@ -91,14 +102,20 @@ export function LiveVoiceSheet({
   const [finalTranscript, setFinalTranscript] = useState("");
   const [inputStatus, setInputStatus] = useState<InputStatus>("connecting");
   const [transcriptError, setTranscriptError] = useState<string | null>(null);
-  const [missionId, setMissionId] = useState<string | null>(null);
+  const [createdMissionId, setCreatedMissionId] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
   const transportRef = useRef<RealtimeTransport | null>(null);
   const onSubmitRef = useRef(onSubmitTranscript);
+  const onMissionCreatedRef = useRef(onMissionCreated);
+  const onMissionUpdatedRef = useRef(onMissionUpdated);
+  const onMissionRefreshRequestedRef = useRef(onMissionRefreshRequested);
   const generationRef = useRef(0);
   const submittingRef = useRef(false);
-  const missionIdRef = useRef<string | null>(null);
+  const createdMissionIdRef = useRef<string | null>(null);
   const handledCallsRef = useRef(new Set<string>());
+  const latestTurnTranscriptRef = useRef("");
+  const currentVoiceItemIdRef = useRef<string | null>(null);
+  const voiceEvidenceWaitersRef = useRef(new Set<(transcript?: string) => void>());
   const transcriptBufferRef = useRef(new RealtimeTranscriptBuffer());
   const transcriptScrollRef = useRef<ScrollView | null>(null);
 
@@ -106,9 +123,68 @@ export function LiveVoiceSheet({
     onSubmitRef.current = onSubmitTranscript;
   }, [onSubmitTranscript]);
 
+  useEffect(() => {
+    onMissionCreatedRef.current = onMissionCreated;
+  }, [onMissionCreated]);
+
+  useEffect(() => {
+    onMissionUpdatedRef.current = onMissionUpdated;
+  }, [onMissionUpdated]);
+
+  useEffect(() => {
+    onMissionRefreshRequestedRef.current = onMissionRefreshRequested;
+  }, [onMissionRefreshRequested]);
+
   const rebuildTranscript = useCallback(() => {
     setTranscript(transcriptBufferRef.current.previewText());
     setFinalTranscript(transcriptBufferRef.current.finalText());
+  }, []);
+
+  const waitForCurrentVoiceEvidence = useCallback(() => {
+    const current = latestTurnTranscriptRef.current.trim();
+    if (current.length >= 3) return Promise.resolve(current);
+    return new Promise<string | undefined>((resolve) => {
+      let settled = false;
+      const complete = (transcript?: string) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        voiceEvidenceWaitersRef.current.delete(complete);
+        resolve(transcript?.trim() || undefined);
+      };
+      const timeout = setTimeout(() => complete(undefined), 3_000);
+      voiceEvidenceWaitersRef.current.add(complete);
+    });
+  }, []);
+
+  const replyToTool = useCallback((
+    callId: string,
+    output: Record<string, unknown>,
+    success: boolean,
+  ) => {
+    try {
+      transportRef.current?.send({
+        type: "conversation.item.create",
+        item: {
+          type: "function_call_output",
+          call_id: callId,
+          output: JSON.stringify(output),
+        },
+      });
+      transportRef.current?.send({
+        type: "response.create",
+        response: {
+          instructions: success
+            ? "Use the function output to confirm the outcome in one short sentence. "
+              + "State the current status accurately and never claim a purchase completed unless the output says so."
+            : "Explain in one short sentence that the command could not be safely completed or verified. "
+              + "Use only the safe error message from the function output, do not retry automatically, and ask "
+              + "the user to review the current mission state.",
+        },
+      });
+    } catch {
+      // The authoritative API result is already known; spoken follow-up is best effort.
+    }
   }, []);
 
   const submitMission = useCallback(async (missionTranscript: string, callId?: string) => {
@@ -120,41 +196,112 @@ export function LiveVoiceSheet({
     setStatus("submitting");
     setError(null);
     try {
-      const result = await onSubmitRef.current(normalized);
+      const submit = onSubmitRef.current;
+      if (!submit || activeMissionId) {
+        throw new MissionCommandRejected(
+          "INTAKE_COMMAND_UNAVAILABLE",
+          "A new mission cannot be created from this existing-mission session.",
+        );
+      }
+      const result = await submit(normalized);
       setTranscript((current) => current.trim().length >= 3 ? current : normalized);
       setInputStatus("captured");
-      missionIdRef.current = result.mission_id;
-      setMissionId(result.mission_id);
+      createdMissionIdRef.current = result.mission_id;
+      setCreatedMissionId(result.mission_id);
       setStatus("complete");
       if (callId) {
-        transportRef.current?.send({
-          type: "conversation.item.create",
-          item: {
-            type: "function_call_output",
-            call_id: callId,
-            output: JSON.stringify({ ok: true, mission_id: result.mission_id }),
-          },
-        });
+        replyToTool(callId, { ok: true, mission_id: result.mission_id, status: result.status }, true);
       }
-      try {
-        transportRef.current?.send({
-          type: "response.create",
-          response: {
-            instructions: "Confirm in one short sentence that the mission is ready in Done. "
-              + "Do not claim that a purchase or external action has completed.",
-          },
-        });
-      } catch {
-        // The mission is already created even if the optional spoken confirmation is interrupted.
-      }
+      onMissionCreatedRef.current?.(result.mission_id);
     } catch (submitError) {
-      if (callId) handledCallsRef.current.delete(callId);
-      setStatus("error");
-      setError(errorMessage(submitError));
+      const safeMessage = submitError instanceof MissionCommandRejected
+        ? submitError.message
+        : "The mission creation result could not be verified. Check the mission list before trying again.";
+      setStatus(activeMissionId ? "ready" : "error");
+      setError(safeMessage);
+      if (callId) {
+        replyToTool(callId, {
+          ok: false,
+          error: {
+            code: submitError instanceof MissionCommandRejected ? submitError.code : "MISSION_CREATE_FAILED",
+            message: safeMessage,
+          },
+        }, false);
+      }
     } finally {
       submittingRef.current = false;
     }
-  }, []);
+  }, [activeMissionId, replyToTool]);
+
+  const runMissionCommand = useCallback(async (
+    command: Exclude<RealtimeCommand, { name: "submit_mission" }>,
+  ) => {
+    if (handledCallsRef.current.has(command.callId)) return;
+    handledCallsRef.current.add(command.callId);
+    if (!activeMissionId) {
+      replyToTool(command.callId, {
+        ok: false,
+        error: {
+          code: "MISSION_CONTEXT_REQUIRED",
+          message: "That command requires an existing mission session.",
+        },
+      }, false);
+      return;
+    }
+    if (submittingRef.current) {
+      replyToTool(command.callId, {
+        ok: false,
+        error: {
+          code: "COMMAND_IN_PROGRESS",
+          message: "Another mission command is still being processed.",
+        },
+      }, false);
+      return;
+    }
+
+    submittingRef.current = true;
+    setStatus("submitting");
+    setError(null);
+    try {
+      const needsCurrentVoiceEvidence = command.name === "approve_purchase"
+        || (command.name === "choose_recovery" && command.choice === "answer_by_voice");
+      const voiceTranscript = needsCurrentVoiceEvidence
+        ? await waitForCurrentVoiceEvidence()
+        : latestTurnTranscriptRef.current;
+      const result = await executeMissionRealtimeCommand(command, {
+        missionId: activeMissionId,
+        voiceTranscript,
+      });
+      setStatus("complete");
+      setInputStatus("captured");
+      try {
+        onMissionUpdatedRef.current?.(result.detail);
+      } catch {
+        // The next query refresh will reconcile the UI even if a consumer callback fails.
+      }
+      replyToTool(command.callId, result.output, true);
+    } catch (commandError) {
+      const safeMessage = commandError instanceof MissionCommandRejected
+        ? commandError.message
+        : "The command result could not be verified. Review the refreshed mission before trying again.";
+      setStatus("ready");
+      setError(safeMessage);
+      try {
+        onMissionRefreshRequestedRef.current?.();
+      } catch {
+        // Polling remains available if the immediate refresh callback fails.
+      }
+      replyToTool(command.callId, {
+        ok: false,
+        error: {
+          code: commandError instanceof MissionCommandRejected ? commandError.code : "MISSION_COMMAND_FAILED",
+          message: safeMessage,
+        },
+      }, false);
+    } finally {
+      submittingRef.current = false;
+    }
+  }, [activeMissionId, replyToTool, waitForCurrentVoiceEvidence]);
 
   const handleEvent = useCallback((event: unknown) => {
     const serverError = realtimeServerError(event);
@@ -167,36 +314,62 @@ export function LiveVoiceSheet({
     const transcriptEvent = parseTranscriptEvent(event);
     if (transcriptEvent) {
       transcriptBufferRef.current.apply(transcriptEvent);
+      if (
+        transcriptEvent.kind === "completed"
+        && currentVoiceItemIdRef.current === transcriptEvent.itemId
+      ) {
+        latestTurnTranscriptRef.current = transcriptEvent.transcript;
+        for (const complete of voiceEvidenceWaitersRef.current) {
+          complete(transcriptEvent.transcript);
+        }
+      }
       setInputStatus(transcriptEvent.kind === "completed" ? "captured" : "streaming");
       setTranscriptError(null);
       rebuildTranscript();
     }
 
     const orderEvent = parseTranscriptOrderEvent(event);
-    if (orderEvent) transcriptBufferRef.current.register(orderEvent);
+    if (orderEvent) {
+      transcriptBufferRef.current.register(orderEvent);
+      const eventType = event && typeof event === "object" && "type" in event
+        ? (event as { type?: unknown }).type
+        : undefined;
+      if (eventType === "input_audio_buffer.committed") {
+        currentVoiceItemIdRef.current = orderEvent.itemId;
+      }
+    }
 
     const transcriptFailure = parseTranscriptFailure(event);
     if (transcriptFailure) {
       transcriptBufferRef.current.fail(transcriptFailure);
       setInputStatus("error");
-      setTranscriptError("This turn could not be transcribed. The live audio connection is still active.");
+      setTranscriptError("I couldn’t capture that. Please try again.");
       rebuildTranscript();
     }
 
-    const call = parseSubmitMissionCall(event);
-    if (call) {
-      void submitMission(call.transcript, call.callId);
+    const command = parseRealtimeCommand(event);
+    if (command?.name === "submit_mission") {
+      void submitMission(command.transcript, command.callId);
+      return;
+    }
+    if (command) {
+      void runMissionCommand(command);
       return;
     }
 
     const activity = realtimeActivity(event);
-    if (activity && !submittingRef.current && !missionIdRef.current) setStatus(activity);
+    if (activity && !submittingRef.current && !createdMissionIdRef.current) setStatus(activity);
     const inputActivity = realtimeInputActivity(event);
     if (inputActivity) {
       setInputStatus(inputActivity);
-      if (inputActivity === "hearing") setTranscriptError(null);
+      if (inputActivity === "hearing") {
+        for (const complete of voiceEvidenceWaitersRef.current) complete(undefined);
+        latestTurnTranscriptRef.current = "";
+        currentVoiceItemIdRef.current = null;
+        setTranscriptError(null);
+      }
     }
-  }, [rebuildTranscript, submitMission]);
+  }, [rebuildTranscript, runMissionCommand, submitMission]);
 
   useEffect(() => {
     if (!visible) return;
@@ -207,8 +380,11 @@ export function LiveVoiceSheet({
     setFinalTranscript("");
     setInputStatus("connecting");
     setTranscriptError(null);
-    setMissionId(null);
-    missionIdRef.current = null;
+    setCreatedMissionId(null);
+    createdMissionIdRef.current = null;
+    latestTurnTranscriptRef.current = "";
+    currentVoiceItemIdRef.current = null;
+    for (const complete of voiceEvidenceWaitersRef.current) complete(undefined);
     submittingRef.current = false;
     handledCallsRef.current.clear();
     transcriptBufferRef.current.clear();
@@ -239,15 +415,18 @@ export function LiveVoiceSheet({
 
     const start = async () => {
       try {
-        const secret = await getRealtimeClientSecret(language);
+        const secret = await getRealtimeClientSecret(language, activeMissionId);
         if (generation !== generationRef.current) return;
         await transport.connect(secret.value);
         if (generation !== generationRef.current) return;
         transport.send({
           type: "response.create",
           response: {
-            instructions: "Greet the user in one short sentence in the configured language and ask what "
-              + "Done should take care of.",
+            instructions: activeMissionId
+              ? "Greet the user in one short sentence in the configured language. Say you are ready to discuss "
+                + "the current mission and ask what they want to check, correct, approve, or escalate."
+              : "Greet the user in one short sentence in the configured language and ask what "
+                + "Done should take care of.",
           },
         });
       } catch (startError) {
@@ -261,10 +440,11 @@ export function LiveVoiceSheet({
 
     return () => {
       generationRef.current += 1;
+      for (const complete of voiceEvidenceWaitersRef.current) complete(undefined);
       transport.disconnect();
       if (transportRef.current === transport) transportRef.current = null;
     };
-  }, [handleEvent, language, retryKey, visible]);
+  }, [activeMissionId, handleEvent, language, retryKey, visible]);
 
   const close = () => {
     transportRef.current?.disconnect();
@@ -276,10 +456,13 @@ export function LiveVoiceSheet({
     setRetryKey((value) => value + 1);
   };
 
-  const copy = statusCopy[status];
+  const statusTitle = activeMissionId && status === "submitting"
+    ? "Updating mission…"
+    : activeMissionId && status === "complete"
+      ? "Mission updated"
+      : statusCopy[status];
   const inputCopy = inputStatusCopy[inputStatus];
   const busy = ["connecting", "thinking", "submitting"].includes(status);
-  const inputActive = ["ready", "hearing", "streaming"].includes(inputStatus);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={close}>
@@ -290,8 +473,7 @@ export function LiveVoiceSheet({
           <View style={styles.header}>
             <View style={styles.brandRow}>
               <Sparkles size={16} color={colors.primaryBright} />
-              <Text style={styles.eyebrow}>OpenAI Live</Text>
-              <View style={styles.modelPill}><Text style={styles.modelText}>GPT Realtime 2</Text></View>
+              <Text style={styles.eyebrow}>Live</Text>
             </View>
             <Pressable onPress={close} accessibilityRole="button" accessibilityLabel="Close" style={styles.close}>
               <X size={21} color={colors.textSecondary} />
@@ -299,17 +481,18 @@ export function LiveVoiceSheet({
           </View>
 
           <View style={styles.voiceStage}>
-            <View style={[styles.glow, status === "error" && styles.errorGlow]} />
-            <LinearGradient
-              colors={status === "complete" ? [colors.success, colors.secondary] : status === "error" ? [colors.error, colors.primarySoft] : [colors.primaryBright, colors.secondary]}
-              style={styles.liveOrb}
-            >
-              <View style={styles.liveOrbInner}>
-                {busy ? <ActivityIndicator size="large" color={colors.text} /> : status === "complete" ? <Check size={42} color={colors.text} /> : <AudioLines size={43} color={colors.text} />}
-              </View>
-            </LinearGradient>
-            <Text accessibilityLiveRegion="polite" style={styles.statusTitle}>{copy.title}</Text>
-            <Text style={styles.statusSubtitle}>{copy.subtitle}</Text>
+            <View style={styles.orbStage}>
+              <View style={[styles.glow, status === "error" && styles.errorGlow]} />
+              <LinearGradient
+                colors={status === "complete" ? [colors.success, colors.secondary] : status === "error" ? [colors.error, colors.primarySoft] : [colors.primaryBright, colors.secondary]}
+                style={styles.liveOrb}
+              >
+                <View style={styles.liveOrbInner}>
+                  {busy ? <ActivityIndicator size="large" color={colors.text} /> : status === "complete" ? <Check size={42} color={colors.text} /> : <AudioLines size={43} color={colors.text} />}
+                </View>
+              </LinearGradient>
+            </View>
+            <Text accessibilityLiveRegion="polite" style={styles.statusTitle}>{statusTitle}</Text>
           </View>
 
           <ScrollView
@@ -319,32 +502,12 @@ export function LiveVoiceSheet({
             onContentSizeChange={() => transcriptScrollRef.current?.scrollToEnd({ animated: true })}
             testID="live-transcript-preview"
           >
-            <View style={styles.transcriptHeader}>
-              <Text style={styles.transcriptLabel}>{missionId ? "What I heard" : "What I hear"}</Text>
-              <View style={[
-                styles.inputStatusPill,
-                inputActive && styles.inputStatusPillActive,
-                inputStatus === "error" && styles.inputStatusPillError,
-              ]} testID="live-input-status">
-                <View style={[
-                  styles.inputStatusDot,
-                  inputActive && styles.inputStatusDotActive,
-                  inputStatus === "transcribing" && styles.inputStatusDotPending,
-                  inputStatus === "error" && styles.inputStatusDotError,
-                ]} />
-                <Text style={[
-                  styles.inputStatusText,
-                  inputActive && styles.inputStatusTextActive,
-                  inputStatus === "error" && styles.inputStatusTextError,
-                ]}>{inputCopy.label}</Text>
-              </View>
-            </View>
             <Text
               accessibilityLiveRegion="polite"
               style={[styles.transcript, !transcript && styles.transcriptPlaceholder]}
               testID="live-transcript-text"
             >
-              {transcript || inputCopy.placeholder}
+              {transcript || inputCopy}
               {transcript && inputStatus === "streaming" ? <Text style={styles.transcriptCursor}> ▋</Text> : null}
             </Text>
             {transcriptError ? <Text accessibilityRole="alert" style={styles.transcriptError}>{transcriptError}</Text> : null}
@@ -353,39 +516,29 @@ export function LiveVoiceSheet({
           {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
 
           <View style={styles.actions}>
-            {missionId ? (
-              <Pressable
-                onPress={() => { close(); onOpenMission(missionId); }}
-                accessibilityRole="button"
-                style={({ pressed }) => [styles.primaryWrap, pressed && styles.pressed]}
-                testID="open-live-mission"
-              >
-                <LinearGradient colors={[colors.primary, "#7442EA"]} style={styles.primaryButton}>
-                  <Text style={styles.primaryText}>Open mission</Text>
-                </LinearGradient>
-              </Pressable>
-            ) : status === "error" ? (
+            {status === "error" ? (
               <Pressable onPress={retry} accessibilityRole="button" style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}>
                 <RefreshCw size={17} color={colors.primaryBright} />
                 <Text style={styles.secondaryText}>Try live again</Text>
               </Pressable>
-            ) : finalTranscript.length >= 3 ? (
+            ) : !activeMissionId && !createdMissionId && finalTranscript.length >= 3 ? (
               <Pressable
                 onPress={() => void submitMission(finalTranscript)}
-                disabled={submittingRef.current}
+                disabled={status === "submitting"}
                 accessibilityRole="button"
-                style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
+                style={({ pressed }) => [styles.primaryWrap, pressed && styles.pressed]}
                 testID="submit-live-transcript"
               >
-                <Check size={17} color={colors.primaryBright} />
-                <Text style={styles.secondaryText}>Create mission now</Text>
+                <LinearGradient colors={[colors.primary, "#7442EA"]} style={styles.primaryButton}>
+                  <Text style={styles.primaryText}>Create mission</Text>
+                </LinearGradient>
               </Pressable>
             ) : null}
-            {!missionId ? (
+            {!createdMissionId ? (
               <View style={styles.fallbackRow}>
                 <Pressable onPress={close} style={({ pressed }) => [styles.fallbackButton, pressed && styles.pressed]}>
                   <Mic2 size={16} color={colors.textSecondary} />
-                  <Text style={styles.fallbackText}>Use GPT-4o Transcribe</Text>
+                  <Text style={styles.fallbackText}>{activeMissionId ? "Close" : "Record instead"}</Text>
                 </Pressable>
                 <Pressable onPress={() => { close(); onUseText(); }} style={({ pressed }) => [styles.fallbackButton, pressed && styles.pressed]}>
                   <Keyboard size={16} color={colors.textSecondary} />
@@ -394,8 +547,6 @@ export function LiveVoiceSheet({
               </View>
             ) : null}
           </View>
-
-          <Text style={styles.privacy}>Audio streams directly to OpenAI with a short-lived token. The standard API key stays on your server.</Text>
         </View>
       </View>
     </Modal>
@@ -422,30 +573,16 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   brandRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs, flex: 1 },
   eyebrow: { ...type.eyebrow, color: colors.text },
-  modelPill: { borderRadius: radii.round, paddingHorizontal: spacing.xs, paddingVertical: 3, borderWidth: 1, borderColor: colors.border, backgroundColor: "rgba(155,92,255,0.09)" },
-  modelText: { fontSize: 10, lineHeight: 14, fontWeight: "600", color: colors.primaryBright },
   close: { width: 42, height: 42, borderRadius: 21, backgroundColor: "rgba(255,255,255,0.04)", alignItems: "center", justifyContent: "center" },
   voiceStage: { alignItems: "center", paddingTop: spacing.xl, paddingBottom: spacing.lg },
-  glow: { position: "absolute", top: 30, width: 130, height: 130, borderRadius: 65, backgroundColor: colors.primary, opacity: 0.24, ...shadows.glow },
+  orbStage: { width: 136, height: 136, alignItems: "center", justifyContent: "center" },
+  glow: { position: "absolute", top: 3, left: 3, width: 130, height: 130, borderRadius: 65, backgroundColor: colors.primary, opacity: 0.24, ...shadows.glow },
   errorGlow: { backgroundColor: colors.error, opacity: 0.2 },
   liveOrb: { width: 116, height: 116, borderRadius: 58, padding: 4, alignItems: "center", justifyContent: "center" },
   liveOrbInner: { width: "100%", height: "100%", borderRadius: 54, alignItems: "center", justifyContent: "center", backgroundColor: colors.backgroundDeep, borderWidth: 1, borderColor: "rgba(255,255,255,0.1)" },
-  statusTitle: { ...type.h2, color: colors.text, marginTop: spacing.lg, textAlign: "center" },
-  statusSubtitle: { ...type.small, color: colors.textSecondary, marginTop: spacing.xs, textAlign: "center" },
+  statusTitle: { ...type.h2, color: colors.text, marginTop: spacing.sm, textAlign: "center" },
   transcriptBox: { maxHeight: 164, borderWidth: 1, borderColor: colors.hairline, borderRadius: radii.md, backgroundColor: "rgba(255,255,255,0.025)" },
   transcriptContent: { minHeight: 112, padding: spacing.md },
-  transcriptHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm, marginBottom: spacing.sm },
-  transcriptLabel: { ...type.eyebrow, color: colors.textMuted },
-  inputStatusPill: { flexDirection: "row", alignItems: "center", gap: 5, borderRadius: radii.round, borderWidth: 1, borderColor: colors.hairline, backgroundColor: "rgba(255,255,255,0.035)", paddingHorizontal: 8, paddingVertical: 4 },
-  inputStatusPillActive: { borderColor: "rgba(72,214,106,0.3)", backgroundColor: "rgba(72,214,106,0.08)" },
-  inputStatusPillError: { borderColor: "rgba(255,93,115,0.3)", backgroundColor: "rgba(255,93,115,0.07)" },
-  inputStatusDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.textMuted },
-  inputStatusDotActive: { backgroundColor: colors.success },
-  inputStatusDotPending: { backgroundColor: colors.warning },
-  inputStatusDotError: { backgroundColor: colors.error },
-  inputStatusText: { fontSize: 9, lineHeight: 12, fontWeight: "700", letterSpacing: 0.5, color: colors.textMuted },
-  inputStatusTextActive: { color: colors.success },
-  inputStatusTextError: { color: colors.error },
   transcript: { ...type.body, color: colors.text },
   transcriptCursor: { color: colors.success },
   transcriptPlaceholder: { color: colors.textMuted },
@@ -460,6 +597,5 @@ const styles = StyleSheet.create({
   fallbackRow: { flexDirection: "row", gap: spacing.sm },
   fallbackButton: { minHeight: 44, flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderRadius: radii.md, borderWidth: 1, borderColor: colors.hairline },
   fallbackText: { ...type.caption, color: colors.textSecondary },
-  privacy: { ...type.caption, color: colors.textMuted, textAlign: "center", marginTop: spacing.md },
   pressed: { opacity: 0.7 },
 });

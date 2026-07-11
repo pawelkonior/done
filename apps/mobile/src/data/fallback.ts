@@ -22,6 +22,7 @@ export const fallbackMissions: MissionSummary[] = [
     icon: "cake",
     accent: "violet",
     recovered_failures: 0,
+    revision: 1,
   },
   {
     id: "laptop-demo",
@@ -36,6 +37,7 @@ export const fallbackMissions: MissionSummary[] = [
     completed_at: null,
     icon: "laptop",
     accent: "blue",
+    revision: 1,
   },
   {
     id: "groceries-active-demo",
@@ -50,6 +52,7 @@ export const fallbackMissions: MissionSummary[] = [
     completed_at: null,
     icon: "cart",
     accent: "green",
+    revision: 1,
   },
   {
     id: "coffee-demo",
@@ -65,6 +68,7 @@ export const fallbackMissions: MissionSummary[] = [
     icon: "coffee",
     accent: "amber",
     recovered_failures: 0,
+    revision: 1,
   },
   {
     id: "refund-demo",
@@ -80,6 +84,7 @@ export const fallbackMissions: MissionSummary[] = [
     icon: "package",
     accent: "violet",
     recovered_failures: 1,
+    revision: 1,
   },
   {
     id: "groceries-demo",
@@ -95,6 +100,7 @@ export const fallbackMissions: MissionSummary[] = [
     icon: "cart",
     accent: "green",
     recovered_failures: 0,
+    revision: 1,
   },
 ];
 
@@ -168,4 +174,3 @@ export const getFallbackDetail = (id: string): MissionDetail => {
   const mission = fallbackMissions.find((item) => item.id === id) ?? fallbackBirthdayDetail.mission;
   return { ...fallbackBirthdayDetail, mission };
 };
-
