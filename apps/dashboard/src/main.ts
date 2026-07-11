@@ -1,14 +1,15 @@
 import "./styles.css";
 
-import { fetchEvents, fetchMissionDetail, fetchMissions } from "./api";
+import { fetchCatalogOffers, fetchEvents, fetchMissionDetail, fetchMissions } from "./api";
 import { displayMissionTitle } from "./copy";
 import { createDetailPanel, simulateLineItemPaymentFailure } from "./detail";
 import { createGraph } from "./graph";
 import { EVENT_NODE, FEEDBACK_EVENTS, WARN_EVENTS, WARN_SEVERITIES } from "./mapping";
 import { createPortfolioFlow } from "./portfolio";
+import { createStoreBatchFlow } from "./store-batches";
 import { REPLAY_MISSION_TITLE, REPLAY_SCRIPT } from "./replay";
 import { createTicker } from "./ticker";
-import type { LoopEvent, MissionDetail } from "./types";
+import type { CatalogOffer, LoopEvent, MissionDetail } from "./types";
 
 const EVENTS_POLL_MS = 1000;
 const MISSIONS_POLL_MS = 5000;
@@ -17,12 +18,14 @@ type Mode = "connecting" | "live" | "replay";
 
 const graph = createGraph(document.getElementById("graph")!);
 const portfolioFlow = createPortfolioFlow(document.getElementById("basket-flow")!);
+const storeBatchFlow = createStoreBatchFlow(document.getElementById("store-batches")!);
 const ticker = createTicker(document.getElementById("ticker")!);
 const detailPanel = createDetailPanel(document.getElementById("detail-panel")!);
 const missionTitleEl = document.getElementById("mission-title")!;
 const missionStatusEl = document.getElementById("mission-status")!;
 const modeBadgeEl = document.getElementById("mode-badge")!;
 const simulateLineItemButton = document.getElementById("simulate-line-item-failure") as HTMLButtonElement;
+const simulateBatchTwoButton = document.getElementById("simulate-batch-two-decline") as HTMLButtonElement;
 const clockEl = document.getElementById("clock")!;
 
 let mode: Mode = "connecting";
@@ -32,6 +35,8 @@ let eventsInFlight = false;
 let detailInFlight = false;
 let latestDetail: MissionDetail | null = null;
 let lineItemFailureSimulation = false;
+let catalogOffers: CatalogOffer[] = [];
+let batchTwoFailureSimulation = false;
 let replayTimer: number | undefined;
 /** Bumped on every view reset so stale in-flight responses are discarded. */
 let generation = 0;
@@ -66,10 +71,13 @@ function dispatch(event: LoopEvent): void {
 function resetView(): void {
   graph.reset();
   portfolioFlow.reset();
+  storeBatchFlow.reset();
   ticker.reset();
   detailPanel.reset();
   latestDetail = null;
   lineItemFailureSimulation = false;
+  batchTwoFailureSimulation = false;
+  renderStoreBatches();
   updateSimulationButton();
   cursor = 0;
   generation += 1;
@@ -82,6 +90,15 @@ function updateSimulationButton(): void {
   simulateLineItemButton.textContent = lineItemFailureSimulation
     ? "clear line-item failure"
     : "simulate line-item failure";
+  simulateBatchTwoButton.disabled = catalogOffers.length === 0;
+  simulateBatchTwoButton.dataset.active = String(batchTwoFailureSimulation);
+  simulateBatchTwoButton.textContent = batchTwoFailureSimulation
+    ? "clear Batch 2 decline"
+    : "simulate Batch 2 decline";
+}
+
+function renderStoreBatches(): void {
+  storeBatchFlow.update(catalogOffers, batchTwoFailureSimulation);
 }
 
 function renderDetail(detail: MissionDetail): void {
@@ -187,7 +204,26 @@ simulateLineItemButton.addEventListener("click", () => {
   renderDetail(latestDetail);
 });
 
+simulateBatchTwoButton.addEventListener("click", () => {
+  if (catalogOffers.length === 0) return;
+  batchTwoFailureSimulation = !batchTwoFailureSimulation;
+  renderStoreBatches();
+  updateSimulationButton();
+});
+
+async function loadStoreBatches(): Promise<void> {
+  try {
+    catalogOffers = await fetchCatalogOffers();
+    renderStoreBatches();
+  } catch {
+    storeBatchFlow.reset();
+  } finally {
+    updateSimulationButton();
+  }
+}
+
 updateSimulationButton();
+void loadStoreBatches();
 
 void pollMissions();
 window.setInterval(() => void pollMissions(), MISSIONS_POLL_MS);

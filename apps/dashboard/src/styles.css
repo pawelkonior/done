@@ -285,6 +285,81 @@ html, body {
 .portfolio-card[data-state="recovered"] { border-color: rgba(255, 174, 51, 0.58); }
 .portfolio-card[data-state="recovered"] span { color: var(--warn); }
 
+/* ---------- store batch simulation at Purchase ---------- */
+
+.store-batches {
+  flex: none;
+  max-height: 176px;
+  padding-top: 9px;
+  overflow: auto;
+  border-top: 1px solid var(--line);
+}
+
+.store-batches-empty {
+  display: grid;
+  min-height: 32px;
+  align-items: center;
+  color: var(--ink-faint);
+  font-size: 12px;
+}
+
+.store-batches-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 2px 8px;
+}
+
+.store-batches-heading strong {
+  color: var(--ink);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.store-batches-heading span { color: var(--ink-faint); font-size: 11px; }
+
+.store-batch-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(280px, 1fr));
+  gap: 8px;
+}
+
+.store-batch {
+  display: grid;
+  gap: 5px;
+  padding: 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+}
+
+.store-batch-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.store-batch-header strong { color: var(--ink); font-size: 12px; }
+.store-batch-header span { color: var(--ink-dim); font-family: var(--mono); font-size: 10px; font-weight: 800; }
+
+.store-endpoint {
+  overflow: hidden;
+  padding: 4px 5px;
+  color: var(--violet);
+  font-family: var(--mono);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: rgba(167, 139, 250, 0.08);
+  border-radius: 4px;
+}
+
+.store-batch-items { display: grid; gap: 2px; }
+.store-batch-items span { color: var(--ink-dim); font-size: 10px; }
+.store-batch-outcome { margin: 0; color: var(--ink-faint); font-size: 10px; line-height: 1.3; }
+.store-batch[data-state="paid"] { border-color: rgba(78, 240, 196, 0.56); }
+.store-batch[data-state="paid"] .store-batch-header span { color: var(--mint); }
+.store-batch[data-state="failed"] { border-color: rgba(255, 93, 115, 0.7); background: rgba(255, 93, 115, 0.08); }
+.store-batch[data-state="failed"] .store-batch-header span { color: var(--bad); }
+.store-batch[data-state="failed"] .store-batch-outcome { color: var(--bad); }
+
 /* ---------- mission detail ---------- */
 
 .detail-panel {
@@ -606,6 +681,8 @@ html, body {
   .metric-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .ticker { min-height: 112px; padding: 9px 11px; }
   .ticker-row { gap: 7px; font-size: 12px; }
+  .simulation-button { font-size: 9px; }
+  .basket-flow-heading, .store-batches-heading { flex-wrap: wrap; }
 }
 
 @media (prefers-reduced-motion: reduce) {

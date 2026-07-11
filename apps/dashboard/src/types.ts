@@ -112,3 +112,15 @@ export interface MissionDetail {
     payment_attempts: number;
   };
 }
+
+export interface CatalogOffer {
+  store_id: string;
+  store_name: string;
+  product_id: string;
+  sku: string;
+  product_name: string;
+  price: number;
+  currency: string;
+  is_available: boolean;
+  product_url?: string;
+}

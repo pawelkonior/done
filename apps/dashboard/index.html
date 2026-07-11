@@ -14,6 +14,7 @@
           <span class="status" id="mission-status" hidden></span>
           <span class="badge" id="mode-badge" data-mode="connecting">connecting…</span>
           <button class="simulation-button" id="simulate-line-item-failure" type="button" disabled>simulate line-item failure</button>
+          <button class="simulation-button" id="simulate-batch-two-decline" type="button" disabled>simulate Batch 2 decline</button>
           <span class="clock" id="clock"></span>
         </div>
       </header>
@@ -21,6 +22,7 @@
         <section class="stage">
           <div id="graph" class="graph" role="img" aria-label="Done decision loop graph"></div>
           <section id="basket-flow" class="basket-flow basket-flow-empty" aria-label="Cart workflow progress"></section>
+          <section id="store-batches" class="store-batches store-batches-empty" aria-label="Store payment batches"></section>
         </section>
         <aside class="detail-panel" id="detail-panel" aria-live="polite" aria-label="Mission details"></aside>
       </main>
