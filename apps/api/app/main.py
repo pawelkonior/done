@@ -219,9 +219,18 @@ def create_app(
         ).split(",")
         if item.strip()
     ]
+    local_origin_regex = os.getenv(
+        "DONE_CORS_ORIGIN_REGEX",
+        (
+            r"https?://(?:localhost|127\.0\.0\.1|\[::1\]|"
+            r"10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|"
+            r"172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2})(?::\d+)?"
+        ),
+    ).strip()
     application.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins,
+        allow_origin_regex=local_origin_regex or None,
         allow_credentials=False,
         allow_methods=["GET", "POST", "PUT", "PATCH", "OPTIONS"],
         allow_headers=[
@@ -432,6 +441,7 @@ def create_app(
                     "revision": detail["mission"]["revision"],
                     "status": detail["mission"]["status"],
                     "contract_available": detail.get("contract") is not None,
+                    "plan_available": detail.get("basket") is not None,
                 },
                 "approval": (
                     {
@@ -453,6 +463,7 @@ def create_app(
                 "action": (
                     {
                         "id": pending_action.get("id"),
+                        "type": pending_action.get("type"),
                         "status": pending_action.get("status"),
                         "owner": pending_action.get("owner"),
                         "choices": [
@@ -460,10 +471,46 @@ def create_app(
                             for item in pending_action.get("options", [])
                             if isinstance(item, dict)
                         ],
+                        "missing_information": [
+                            item
+                            for item in (
+                                pending_action.get("context", {}).get(
+                                    "missing_information", []
+                                )
+                                if isinstance(pending_action.get("context"), dict)
+                                else []
+                            )
+                            if item
+                            in {
+                                "shopping_scope",
+                                "participants",
+                                "recipient_age",
+                                "budget",
+                                "budget_currency",
+                                "deadline",
+                                "deadline_time",
+                            }
+                        ],
                     }
                     if pending_action
                     else None
                 ),
+                "delivery": {
+                    "selected_id": next(
+                        (
+                            option.get("id")
+                            for option in detail.get("delivery_options", [])
+                            if option.get("selected") is True
+                        ),
+                        None,
+                    ),
+                    "choices": [
+                        option.get("id")
+                        for option in detail.get("delivery_options", [])
+                        if option.get("available", True) is True
+                        and option.get("selected") is not True
+                    ],
+                },
                 # Titles and questions can contain user, catalog or merchant text.
                 # They are display-only context and are never part of tool bindings.
                 "untrusted_data": {
@@ -471,6 +518,17 @@ def create_app(
                     "action_question": (
                         pending_action.get("question") if pending_action else None
                     ),
+                    "purchase_plan": {
+                        "basket": detail.get("basket"),
+                        "delivery_options": detail.get("delivery_options", []),
+                        "guardrail_results": (
+                            detail.get("portfolio_decision", {}).get(
+                                "constraint_report", []
+                            )
+                            if isinstance(detail.get("portfolio_decision"), dict)
+                            else []
+                        ),
+                    },
                 },
             }
         secret = await resolved_realtime.create_client_secret(

@@ -1,5 +1,6 @@
 import { Platform } from "react-native";
 import { File } from "expo-file-system";
+import Constants from "expo-constants";
 import type {
   ActionRequest,
   ApprovalRequest,
@@ -32,9 +33,19 @@ import type {
   VoiceMissionInput,
 } from "@/types/domain";
 
-const defaultHost = Platform.OS === "android" ? "10.0.2.2" : "localhost";
+function localDevelopmentHost() {
+  if (Platform.OS === "web" && typeof globalThis.location?.hostname === "string") {
+    return globalThis.location.hostname || "localhost";
+  }
+  const expoHost = Constants.expoConfig?.hostUri?.split(":", 1)[0]?.trim();
+  if (expoHost) return expoHost;
+  return Platform.OS === "android" ? "10.0.2.2" : "localhost";
+}
+
+const defaultHost = localDevelopmentHost();
 export const API_URL =
   process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, "") ?? `http://${defaultHost}:8001`;
+const API_TIMEOUT_MS = 20_000;
 
 function apiAccessToken() {
   return process.env.EXPO_PUBLIC_API_ACCESS_TOKEN?.trim();
@@ -51,15 +62,42 @@ export class ApiError extends Error {
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const accessToken = apiAccessToken();
-  const response = await fetch(`${API_URL}${path}`, {
-    ...init,
-    headers: {
-      Accept: "application/json",
-      ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
-      ...init?.headers,
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-    },
-  });
+  const controller = new AbortController();
+  let timedOut = false;
+  const abortFromCaller = () => controller.abort();
+  if (init?.signal?.aborted) controller.abort();
+  else init?.signal?.addEventListener("abort", abortFromCaller, { once: true });
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, API_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      ...init,
+      signal: controller.signal,
+      headers: {
+        Accept: "application/json",
+        ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
+        ...init?.headers,
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
+    });
+  } catch {
+    if (timedOut) {
+      throw new ApiError(
+        `The Done server at ${API_URL} did not respond within 20 seconds. Review the mission state before retrying a change.`,
+        0,
+      );
+    }
+    throw new ApiError(
+      `Can't reach the Done server at ${API_URL}. Check that the backend is running and this device is on the same network.`,
+      0,
+    );
+  } finally {
+    clearTimeout(timeout);
+    init?.signal?.removeEventListener("abort", abortFromCaller);
+  }
 
   if (!response.ok) {
     let message = `Request failed (${response.status})`;
@@ -535,6 +573,31 @@ export async function createTextMission(input: string | TextMissionInput) {
   } satisfies CreateMissionResponse;
 }
 
+/**
+ * Persists a transcript produced by the live microphone session as voice
+ * input. It deliberately uses the voice endpoint so audit/event projections
+ * cannot mistake a Realtime conversation for typed intake.
+ */
+export async function createVoiceTranscriptMission(input: TextMissionInput) {
+  const payload = {
+    transcript: input.transcript,
+    locale: input.locale ?? "en-PL",
+    timezone: input.timezone ?? "Europe/Warsaw",
+  };
+  const raw = await apiFetch<JsonRecord>("/v1/missions/voice", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  const detail = normalizeDetail(raw);
+  return {
+    mission_id: detail.mission.id,
+    status: detail.mission.status,
+    transcript: detail.mission.raw_voice_transcript,
+    confirmation: asString(raw.confirmation, "I understood your mission. I’ll take care of it."),
+    detail,
+  } satisfies CreateMissionResponse;
+}
+
 function audioMetadata(uri: string) {
   const clean = uri.split("?")[0] ?? uri;
   const extension = clean.match(/\.([a-zA-Z0-9]+)$/)?.[1]?.toLowerCase() ?? "m4a";
@@ -604,6 +667,15 @@ function revisionHeaders(expectedRevision?: number): HeadersInit | undefined {
   return typeof expectedRevision === "number"
     ? { "If-Match": `W/"${expectedRevision}"` }
     : undefined;
+}
+
+export async function replanMission(missionId: string, expectedRevision: number) {
+  const raw = await apiFetch<JsonRecord>(`/v1/missions/${missionId}/replan`, {
+    method: "POST",
+    body: JSON.stringify({ expected_revision: expectedRevision }),
+    headers: revisionHeaders(expectedRevision),
+  });
+  return normalizeDetail(raw);
 }
 
 export async function cancelMission(missionId: string, expectedRevision: number) {

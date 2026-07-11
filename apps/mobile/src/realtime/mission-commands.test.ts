@@ -55,6 +55,8 @@ function missionDetail(overrides: Partial<MissionDetail> = {}): MissionDetail {
       amount: 499.99,
       currency: "PLN",
     },
+    portfolio_decision: null,
+    order: null,
     events: [],
     metrics: {
       budget: 500,
@@ -79,6 +81,7 @@ function commandApi(current: MissionDetail = missionDetail()) {
     resolveActionRequest: jest.fn(async () => current),
     cancelMission: jest.fn(async () => current),
     requestHumanSupport: jest.fn(async () => current),
+    selectDeliveryOption: jest.fn(async () => current),
   };
   return api as jest.Mocked<MissionCommandApi>;
 }
@@ -163,7 +166,10 @@ describe("mission Realtime command execution", () => {
       merchantId: "merchant-b",
     };
 
-    await expect(executeMissionRealtimeCommand(command, { missionId: "mission-1" }, api))
+    await expect(executeMissionRealtimeCommand(command, {
+      missionId: "mission-1",
+      voiceTranscript: "Zatwierdzam ten zakup.",
+    }, api))
       .rejects.toMatchObject({ code: "APPROVAL_BINDING_UNAVAILABLE" });
 
     const boundApi = commandApi();
@@ -216,20 +222,29 @@ describe("mission Realtime command execution", () => {
       missionId: "mission-1",
       revision: 4,
       correction: "Zmień budżet na 450 PLN.",
-    }, { missionId: "mission-1" }, api);
+    }, {
+      missionId: "mission-1",
+      voiceTranscript: "Zmień budżet na 450 PLN.",
+    }, api);
     await executeMissionRealtimeCommand({
       name: "cancel_mission",
       callId: "call-cancel",
       missionId: "mission-1",
       revision: 4,
-    }, { missionId: "mission-1" }, api);
+    }, {
+      missionId: "mission-1",
+      voiceTranscript: "Anuluj tę misję.",
+    }, api);
     await executeMissionRealtimeCommand({
       name: "request_human",
       callId: "call-human",
       missionId: "mission-1",
       revision: 4,
       reason: "Potrzebuję pomocy z zamiennikiem.",
-    }, { missionId: "mission-1" }, api);
+    }, {
+      missionId: "mission-1",
+      voiceTranscript: "Potrzebuję pomocy człowieka z zamiennikiem.",
+    }, api);
 
     expect(api.correctMission).toHaveBeenCalledWith("mission-1", {
       correction: "Zmień budżet na 450 PLN.",
@@ -237,8 +252,136 @@ describe("mission Realtime command execution", () => {
     });
     expect(api.cancelMission).toHaveBeenCalledWith("mission-1", 4);
     expect(api.requestHumanSupport).toHaveBeenCalledWith("mission-1", {
-      reason: "Potrzebuję pomocy z zamiennikiem.",
+      reason: "Potrzebuję pomocy człowieka z zamiennikiem.",
       expected_revision: 4,
     });
+  });
+
+  it("rejects every state-changing Realtime command without a fresh voice turn", async () => {
+    const api = commandApi();
+
+    await expect(executeMissionRealtimeCommand({
+      name: "cancel_mission",
+      callId: "call-cancel",
+      missionId: "mission-1",
+      revision: 4,
+    }, { missionId: "mission-1" }, api)).rejects.toMatchObject({
+      code: "VOICE_EVIDENCE_REQUIRED",
+    });
+
+    expect(api.cancelMission).not.toHaveBeenCalled();
+  });
+
+  it("rejects a destructive model tool call when the spoken intent does not match", async () => {
+    const api = commandApi();
+
+    await expect(executeMissionRealtimeCommand({
+      name: "cancel_mission",
+      callId: "call-hallucinated-cancel",
+      missionId: "mission-1",
+      revision: 4,
+    }, {
+      missionId: "mission-1",
+      voiceTranscript: "Jaki jest aktualny status misji?",
+    }, api)).rejects.toMatchObject({ code: "VOICE_INTENT_MISMATCH" });
+
+    expect(api.cancelMission).not.toHaveBeenCalled();
+  });
+
+  it("returns a fresh voice-safe purchase plan without requiring mutation evidence", async () => {
+    const current = missionDetail({
+      delivery_options: [{
+        id: "delivery-priority",
+        name: "Priority delivery",
+        eta: "Tomorrow before 14:00",
+        price: 29.99,
+        currency: "PLN",
+        badge: "Recommended",
+        selected: true,
+        available: true,
+        reliability: 0.96,
+      }],
+    });
+    const api = commandApi(current);
+
+    const result = await executeMissionRealtimeCommand({
+      name: "get_purchase_plan",
+      callId: "call-plan",
+      missionId: "mission-1",
+      revision: 4,
+    }, { missionId: "mission-1" }, api);
+
+    expect(result.output).toMatchObject({
+      ok: true,
+      action: "purchase_plan_read",
+      basket: {
+        merchant: "Party Store",
+        total: 499.99,
+        currency: "PLN",
+      },
+      selected_delivery: {
+        id: "delivery-priority",
+        price: 29.99,
+      },
+    });
+  });
+
+  it("selects only the available delivery option identified in the voice turn", async () => {
+    const current = missionDetail({
+      delivery_options: [
+        {
+          id: "delivery-priority",
+          name: "Priority delivery",
+          eta: "Tomorrow before 14:00",
+          price: 29.99,
+          currency: "PLN",
+          badge: "Recommended",
+          selected: true,
+          available: true,
+          reliability: 0.96,
+        },
+        {
+          id: "delivery-value",
+          name: "Latest safe slot",
+          eta: "Tomorrow before 16:00",
+          price: 8.99,
+          currency: "PLN",
+          badge: "Cheapest",
+          selected: false,
+          available: true,
+          reliability: 0.86,
+        },
+      ],
+    });
+    const api = commandApi(current);
+
+    await executeMissionRealtimeCommand({
+      name: "select_delivery",
+      callId: "call-delivery",
+      missionId: "mission-1",
+      revision: 4,
+      optionId: "delivery-value",
+    }, {
+      missionId: "mission-1",
+      voiceTranscript: "Wybierz Latest safe slot.",
+    }, api);
+
+    expect(api.selectDeliveryOption).toHaveBeenCalledWith("mission-1", {
+      option_id: "delivery-value",
+      expected_revision: 4,
+    });
+
+    const mismatchApi = commandApi(current);
+    await expect(executeMissionRealtimeCommand({
+      name: "select_delivery",
+      callId: "call-wrong-delivery",
+      missionId: "mission-1",
+      revision: 4,
+      optionId: "delivery-value",
+    }, {
+      missionId: "mission-1",
+      voiceTranscript: "Zostaw Priority delivery.",
+    }, mismatchApi)).rejects.toMatchObject({ code: "DELIVERY_VOICE_MISMATCH" });
+    expect(mismatchApi.selectDeliveryOption).not.toHaveBeenCalled();
   });
 });

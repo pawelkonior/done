@@ -92,3 +92,28 @@ def test_voice_json_contract_remains_available_for_accessibility(
 
     assert response.status_code == 201, response.text
     assert response.json()["mission"]["input_mode"] == "voice"
+
+
+def test_local_metro_ports_and_private_lan_origins_receive_cors_headers(
+    tmp_path: Path,
+) -> None:
+    with runtime_client(tmp_path) as client:
+        local = client.options(
+            "/v1/missions",
+            headers={
+                "Origin": "http://127.0.0.1:8083",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+        phone = client.options(
+            "/v1/missions",
+            headers={
+                "Origin": "http://192.168.1.24:8083",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+
+    assert local.status_code == 200
+    assert local.headers["access-control-allow-origin"] == "http://127.0.0.1:8083"
+    assert phone.status_code == 200
+    assert phone.headers["access-control-allow-origin"] == "http://192.168.1.24:8083"

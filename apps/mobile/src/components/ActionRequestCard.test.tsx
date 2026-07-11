@@ -63,6 +63,30 @@ describe("ActionRequestCard", () => {
     await screen.unmount();
   });
 
+  it("translates legacy clarification copy and lists every missing detail", async () => {
+    const clarification: ActionRequest = {
+      ...pendingAction,
+      type: "clarification",
+      reason_code: "MISSION_CONTRACT_INCOMPLETE",
+      question: "Jakie wymagania powinien spełniać ten zakup?",
+      options: [{ id: "answer_by_voice", label: "Answer by voice" }],
+      context: {
+        missing_information: ["shopping_scope", "deadline"],
+      },
+    };
+    const screen = await render(
+      <ActionRequestCard action={clarification} loading={false} onChoose={jest.fn()} />,
+    );
+
+    expect(screen.getByTestId("action-request-status")).toHaveTextContent("Voice decision needed");
+    expect(screen.getByTestId("action-request-question")).toHaveTextContent(
+      "What should this purchase include?",
+    );
+    expect(screen.getByText("What to buy: gifts or party supplies")).toBeTruthy();
+    expect(screen.getByText("Delivery date and time")).toBeTruthy();
+    await screen.unmount();
+  });
+
   it("prefers the explicit human-support callback", async () => {
     const onChoose = jest.fn();
     const onRequestHuman = jest.fn();

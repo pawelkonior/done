@@ -132,6 +132,183 @@ def to_cents(value: str | float | Decimal) -> int:
     return int((normalized * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
+_POLISH_NUMBER_VALUES = {
+    "zero": 0,
+    "jeden": 1,
+    "jedna": 1,
+    "dwa": 2,
+    "dwie": 2,
+    "trzy": 3,
+    "cztery": 4,
+    "pięć": 5,
+    "sześć": 6,
+    "siedem": 7,
+    "osiem": 8,
+    "dziewięć": 9,
+    "dziesięć": 10,
+    "jedenaście": 11,
+    "dwanaście": 12,
+    "trzynaście": 13,
+    "czternaście": 14,
+    "piętnaście": 15,
+    "szesnaście": 16,
+    "siedemnaście": 17,
+    "osiemnaście": 18,
+    "dziewiętnaście": 19,
+    "dwadzieścia": 20,
+    "trzydzieści": 30,
+    "czterdzieści": 40,
+    "pięćdziesiąt": 50,
+    "sześćdziesiąt": 60,
+    "siedemdziesiąt": 70,
+    "osiemdziesiąt": 80,
+    "dziewięćdziesiąt": 90,
+    "sto": 100,
+    "dwieście": 200,
+    "trzysta": 300,
+    "czterysta": 400,
+    "pięćset": 500,
+    "sześćset": 600,
+    "siedemset": 700,
+    "osiemset": 800,
+    "dziewięćset": 900,
+}
+_POLISH_THOUSANDS = {"tysiąc", "tysiące", "tysięcy"}
+_POLISH_CURRENCY_WORDS = {"pln", "zł", "złoty", "złote", "złotych"}
+_POLISH_GROSZ_WORDS = {"grosz", "grosze", "groszy"}
+
+
+def _parse_polish_number_tokens(tokens: list[str]) -> int | None:
+    total = 0
+    current = 0
+    found = False
+    for token in tokens:
+        if token == "i":
+            continue
+        if token in _POLISH_NUMBER_VALUES:
+            current += _POLISH_NUMBER_VALUES[token]
+            found = True
+            continue
+        if token in _POLISH_THOUSANDS:
+            total += max(current, 1) * 1_000
+            current = 0
+            found = True
+            continue
+        return None
+    return total + current if found else None
+
+
+def _polish_word_amounts_to_cents(value: str) -> set[int]:
+    tokens = re.findall(r"[a-ząćęłńóśźż]+", value.casefold())
+    amounts: set[int] = set()
+    number_words = set(_POLISH_NUMBER_VALUES) | _POLISH_THOUSANDS | {"i"}
+    for currency_index, token in enumerate(tokens):
+        if token not in _POLISH_CURRENCY_WORDS:
+            continue
+        start = currency_index
+        while start > 0 and tokens[start - 1] in number_words:
+            start -= 1
+        whole = _parse_polish_number_tokens(tokens[start:currency_index])
+        if whole is None:
+            continue
+        grosz_index = next(
+            (
+                index
+                for index in range(currency_index + 1, min(len(tokens), currency_index + 8))
+                if tokens[index] in _POLISH_GROSZ_WORDS
+            ),
+            None,
+        )
+        fractional = 0
+        if grosz_index is not None:
+            fractional_tokens = [
+                item
+                for item in tokens[currency_index + 1 : grosz_index]
+                if item != "i"
+            ]
+            parsed_fractional = _parse_polish_number_tokens(fractional_tokens)
+            if parsed_fractional is None or not 0 <= parsed_fractional < 100:
+                continue
+            fractional = parsed_fractional
+        amounts.add((whole * 100) + fractional)
+    return amounts
+
+
+def require_spoken_approval(
+    transcript: str | None,
+    *,
+    amount_cents: int,
+    currency: str,
+    merchant_id: str,
+    merchant_labels: tuple[str, ...] = (),
+) -> str:
+    """Validate fail-closed spoken consent bound to the displayed total.
+
+    Realtime tool arguments bind the immutable plan. This separate check makes
+    the user evidence meaningful: it must be affirmative and repeat the amount
+    and currency that were read aloud. Ambiguous or negated utterances require
+    a fresh voice turn instead of starting commerce side effects.
+    """
+
+    spoken = (transcript or "").strip()
+    normalized = spoken.casefold()
+    if len(spoken) < 3:
+        raise WorkflowConflictError(
+            "A transcribed spoken approval is required"
+        )
+    if re.search(
+        r"\b(?:nie|no|anuluj\w*|odrzuc\w*|reject\w*|cancel\w*|stop)\b",
+        normalized,
+    ):
+        raise WorkflowConflictError(
+            "Spoken approval was negative or ambiguous"
+        )
+    if re.search(
+        r"\b(?:tak|yes|approve\w*|confirm\w*|agree\w*|"
+        r"zatwierdz\w*|akcept\w*|potwierdz\w*|zgadzam)\b",
+        normalized,
+    ) is None:
+        raise WorkflowConflictError(
+            "Spoken approval must contain an explicit confirmation"
+        )
+
+    spoken_amounts: set[int] = set()
+    for value in re.findall(r"(?<!\w)\d+(?:[\s.,]\d{1,2})?(?!\w)", normalized):
+        compact = re.sub(r"\s+", "", value).replace(",", ".")
+        try:
+            spoken_amounts.add(to_cents(compact))
+        except (ValueError, ArithmeticError):
+            continue
+    spoken_amounts.update(_polish_word_amounts_to_cents(normalized))
+    if amount_cents not in spoken_amounts:
+        raise WorkflowConflictError(
+            "Spoken approval amount does not match the current plan"
+        )
+
+    aliases = {
+        "PLN": (r"\bpln\b", r"zł", r"zlot", r"złot"),
+        "EUR": (r"\beur\b", r"€", r"euro"),
+        "USD": (r"\busd\b", r"\$", r"dolar"),
+    }
+    if not any(re.search(alias, normalized) for alias in aliases.get(currency, ())):
+        raise WorkflowConflictError(
+            "Spoken approval currency does not match the current plan"
+        )
+    compact_spoken = "".join(character for character in normalized if character.isalnum())
+    accepted_merchants = {
+        "".join(character for character in label.casefold() if character.isalnum())
+        for label in (merchant_id, *merchant_labels)
+        if label.strip()
+    }
+    if not accepted_merchants or not any(
+        merchant in compact_spoken for merchant in accepted_merchants
+    ):
+        raise WorkflowConflictError(
+            "Spoken approval merchant does not match the current plan"
+        )
+    return spoken[:4_000]
+
+
 def normalize_failure_type(failure_type: str) -> str:
     return "product_unavailable" if failure_type == "out_of_stock" else failure_type
 
@@ -407,9 +584,22 @@ class MissionWorkflow:
         contract_id = new_id("ctr")
         approval_id = new_id("apr")
         now = utc_now()
-        contract_needs = needs_to_payload(party_needs(interpreted["participants"]))
-        portfolio_checkout = (
-            interpreted["shopping_scope"] == ShoppingScope.PARTY_SUPPLIES.value
+        shopping_scope = ShoppingScope(interpreted["shopping_scope"])
+        portfolio_supported = shopping_scope == ShoppingScope.PARTY_SUPPLIES
+        portfolio_checkout = portfolio_supported
+        contract_needs = (
+            needs_to_payload(
+                party_needs(
+                    interpreted["participants"],
+                    include_candles=interpreted.get("recipient_age") is not None,
+                    candle_quantity=max(
+                        1,
+                        (int(interpreted.get("recipient_age") or 1) + 9) // 10,
+                    ),
+                )
+            )
+            if portfolio_supported
+            else []
         )
 
         with self.database.transaction() as connection:
@@ -585,7 +775,7 @@ class MissionWorkflow:
             self._set_state(connection, mission_id, "planning", 3)
             delivery_reserve = Money(1299, interpreted["currency"])
             search_request = CatalogSearchRequest(
-                scope=ShoppingScope(interpreted["shopping_scope"]),
+                scope=shopping_scope,
                 participants=int(interpreted["participants"]),
                 recipient_age=interpreted.get("recipient_age"),
                 budget=Money(
@@ -706,93 +896,167 @@ class MissionWorkflow:
                 },
             )
 
-            decision = self.portfolio_planner.run(
-                connection,
-                mission_id=mission_id,
-                trigger=PortfolioTrigger.MISSION_CREATED,
-                preferred_merchants=policy.preferred_merchant_ids,
-            )
-            self._event(
-                connection,
-                mission_id,
-                "market.snapshot_captured",
-                "tool",
-                "Market snapshot captured",
-                "The portfolio run uses one immutable catalog and price snapshot.",
-                payload={"snapshot_id": decision.snapshot_id, "decision_id": decision.id},
-            )
-            orange_actions = [
-                action
-                for action in decision.selected_actions
-                if action.timing_mode.value == "orange"
-            ]
-            if orange_actions:
-                self._event(
-                    connection,
-                    mission_id,
-                    "timing.orange_mode",
-                    "policy",
-                    "Waiting disabled for time-sensitive offers",
-                    "One or more offers reached their latest safe point to buy.",
-                    severity="warning",
-                    payload={"need_ids": [action.need_id for action in orange_actions]},
-                )
-            if decision.status is PortfolioDecisionStatus.INFEASIBLE_PLAN:
-                self._event(
-                    connection,
-                    mission_id,
-                    "portfolio.infeasible",
-                    "solver",
-                    "No feasible portfolio",
-                    "No complete plan satisfies the current hard constraints.",
-                    severity="error",
-                    payload={"decision_id": decision.id, "reasons": list(decision.constraint_report)},
-                )
-                self._set_state(connection, mission_id, "failed", 4)
-                self._run_shadow_if_enabled(
+            decision = None
+            if portfolio_supported:
+                decision = self.portfolio_planner.run(
                     connection,
                     mission_id=mission_id,
                     trigger=PortfolioTrigger.MISSION_CREATED,
                     preferred_merchants=policy.preferred_merchant_ids,
                 )
-                return self._detail(connection, mission_id)
-            if decision.status is PortfolioDecisionStatus.INTERNAL_VALIDATION_ERROR:
                 self._event(
                     connection,
                     mission_id,
-                    "portfolio.invalid",
-                    "policy",
-                    "Portfolio validation failed",
-                    "The solver result did not pass independent validation.",
-                    severity="error",
-                    payload={"decision_id": decision.id, "reasons": list(decision.constraint_report)},
+                    "market.snapshot_captured",
+                    "tool",
+                    "Market snapshot captured",
+                    "The portfolio run uses one immutable catalog and price snapshot.",
+                    payload={
+                        "snapshot_id": decision.snapshot_id,
+                        "decision_id": decision.id,
+                    },
                 )
-                self._set_state(connection, mission_id, "failed", 4)
-                self._run_shadow_if_enabled(
-                    connection,
-                    mission_id=mission_id,
-                    trigger=PortfolioTrigger.MISSION_CREATED,
-                    preferred_merchants=policy.preferred_merchant_ids,
+                orange_actions = [
+                    action
+                    for action in decision.selected_actions
+                    if action.timing_mode.value == "orange"
+                ]
+                if orange_actions:
+                    self._event(
+                        connection,
+                        mission_id,
+                        "timing.orange_mode",
+                        "policy",
+                        "Waiting disabled for time-sensitive offers",
+                        "One or more offers reached their latest safe point to buy.",
+                        severity="warning",
+                        payload={
+                            "need_ids": [action.need_id for action in orange_actions]
+                        },
+                    )
+                if decision.status is PortfolioDecisionStatus.INFEASIBLE_PLAN:
+                    self._event(
+                        connection,
+                        mission_id,
+                        "portfolio.infeasible",
+                        "solver",
+                        "No feasible portfolio",
+                        "No complete plan satisfies the current hard constraints.",
+                        severity="error",
+                        payload={
+                            "decision_id": decision.id,
+                            "reasons": list(decision.constraint_report),
+                        },
+                    )
+                    self._set_state(connection, mission_id, "failed", 4)
+                    self._run_shadow_if_enabled(
+                        connection,
+                        mission_id=mission_id,
+                        trigger=PortfolioTrigger.MISSION_CREATED,
+                        preferred_merchants=policy.preferred_merchant_ids,
+                    )
+                    return self._detail(connection, mission_id)
+                if decision.status is PortfolioDecisionStatus.INTERNAL_VALIDATION_ERROR:
+                    self._event(
+                        connection,
+                        mission_id,
+                        "portfolio.invalid",
+                        "policy",
+                        "Portfolio validation failed",
+                        "The solver result did not pass independent validation.",
+                        severity="error",
+                        payload={
+                            "decision_id": decision.id,
+                            "reasons": list(decision.constraint_report),
+                        },
+                    )
+                    self._set_state(connection, mission_id, "failed", 4)
+                    self._run_shadow_if_enabled(
+                        connection,
+                        mission_id=mission_id,
+                        trigger=PortfolioTrigger.MISSION_CREATED,
+                        preferred_merchants=policy.preferred_merchant_ids,
+                    )
+                    return self._detail(connection, mission_id)
+                if decision.status is PortfolioDecisionStatus.WAITING:
+                    self._event(
+                        connection,
+                        mission_id,
+                        "portfolio.waiting",
+                        "solver",
+                        "Waiting for a safer price point",
+                        "The selected offers can safely wait until their latest point to buy.",
+                        payload={
+                            "decision_id": decision.id,
+                            "reasons": list(decision.explanations),
+                        },
+                    )
+                    self._set_state(connection, mission_id, "waiting", 4)
+                    self._run_shadow_if_enabled(
+                        connection,
+                        mission_id=mission_id,
+                        trigger=PortfolioTrigger.MISSION_CREATED,
+                        preferred_merchants=policy.preferred_merchant_ids,
+                    )
+                    return self._detail(connection, mission_id)
+
+                catalog_signature = sorted(
+                    (
+                        line.product_id,
+                        line.quantity,
+                        int(planned_products[line.product_id]["price_cents"]),
+                    )
+                    for line in catalog_plan.lines
                 )
-                return self._detail(connection, mission_id)
-            if decision.status is PortfolioDecisionStatus.WAITING:
-                self._event(
-                    connection,
-                    mission_id,
-                    "portfolio.waiting",
-                    "solver",
-                    "Waiting for a safer price point",
-                    "The selected offers can safely wait until their latest point to buy.",
-                    payload={"decision_id": decision.id, "reasons": list(decision.explanations)},
+                decision_signature = sorted(
+                    (
+                        action.offer.product_id,
+                        action.quantity,
+                        action.offer.price_cents,
+                    )
+                    for action in decision.selected_actions
+                    if action.action.value == "buy_now"
                 )
-                self._set_state(connection, mission_id, "waiting", 4)
-                self._run_shadow_if_enabled(
-                    connection,
-                    mission_id=mission_id,
-                    trigger=PortfolioTrigger.MISSION_CREATED,
-                    preferred_merchants=policy.preferred_merchant_ids,
-                )
-                return self._detail(connection, mission_id)
+                if (
+                    decision.selected_merchant_id != catalog_plan.merchant_id
+                    or decision_signature != catalog_signature
+                ):
+                    action_id = self._create_action_request(
+                        connection,
+                        mission_id,
+                        action_type="human_support",
+                        reason_code="PLANNERS_DISAGREE",
+                        question=(
+                            "Catalog and portfolio planners produced different checkout "
+                            "plans. Review them before asking the user for approval."
+                        ),
+                        options=[{"id": "cancel", "label": "Cancel mission"}],
+                        context={
+                            "portfolio_decision_id": decision.id,
+                            "catalog_merchant_id": catalog_plan.merchant_id,
+                            "portfolio_merchant_id": decision.selected_merchant_id,
+                        },
+                        owner="support",
+                    )
+                    self._set_state(connection, mission_id, "waiting_for_support", 4)
+                    connection.execute(
+                        "UPDATE missions SET requires_approval = 0 WHERE id = ?",
+                        (mission_id,),
+                    )
+                    self._event(
+                        connection,
+                        mission_id,
+                        "portfolio.catalog_mismatch",
+                        "policy",
+                        "Checkout planners disagree",
+                        "No basket, approval, reservation, card or payment was created.",
+                        severity="action",
+                        payload={
+                            "action_request_id": action_id,
+                            "decision_id": decision.id,
+                        },
+                    )
+                    return self._detail(connection, mission_id)
 
             if portfolio_checkout:
                 contract = connection.execute(
@@ -837,7 +1101,7 @@ class MissionWorkflow:
                 ),
                 payload={
                     "basket_id": basket_id,
-                    "decision_id": decision.id,
+                    "decision_id": decision.id if decision is not None else None,
                     "source": basket_source,
                     "subtotal": money(subtotal),
                     "delivery_cost": money(selected_delivery_cost),
@@ -958,7 +1222,7 @@ class MissionWorkflow:
                     (
                         approval_id,
                         mission_id,
-                        decision.id,
+                        decision.id if decision is not None else None,
                         (
                             f"Approve purchase for {money(total):.2f} "
                             f"{interpreted['currency']}?"
@@ -1056,6 +1320,18 @@ class MissionWorkflow:
             ):
                 raise WorkflowConflictError(
                     "Approval must bind amount, currency, plan and merchant"
+                )
+            if choice == "approve":
+                merchant = connection.execute(
+                    "SELECT name FROM merchants WHERE id = ?",
+                    (expected_merchant_id,),
+                ).fetchone()
+                voice_transcript = require_spoken_approval(
+                    voice_transcript,
+                    amount_cents=to_cents(expected_amount or 0),
+                    currency=expected_currency or "",
+                    merchant_id=expected_merchant_id or "",
+                    merchant_labels=(merchant["name"],) if merchant is not None else (),
                 )
 
             if approval["status"] != "pending":
@@ -1655,6 +1931,11 @@ class MissionWorkflow:
                 """,
                 (utc_now(), mission_id),
             )
+            self._resolve_action_requests(
+                connection,
+                mission_id,
+                resolution={"choice": "cancel", "source": "mission_cancelled"},
+            )
             self._event(
                 connection,
                 mission_id,
@@ -1852,6 +2133,11 @@ class MissionWorkflow:
             ).fetchone()
             if contract is None:
                 raise WorkflowConflictError("Mission has no contract")
+            contract_needs = load_json(contract["needs_json"], [])
+            if not contract_needs:
+                raise WorkflowConflictError(
+                    "Gift mission corrections require a fresh catalog planning run"
+                )
 
             budget_cents = contract["budget_limit_cents"]
             budget_match = re.search(
@@ -1887,7 +2173,27 @@ class MissionWorkflow:
                 participants = [
                     {"type": "children", "count": participant_count}
                 ]
-                needs_json = dump_json(needs_to_payload(party_needs(participant_count)))
+                include_candles = any(
+                    isinstance(need, dict) and need.get("id") == "candles"
+                    for need in contract_needs
+                )
+                candle_quantity = next(
+                    (
+                        int(need.get("quantity", 1))
+                        for need in contract_needs
+                        if isinstance(need, dict) and need.get("id") == "candles"
+                    ),
+                    1,
+                )
+                needs_json = dump_json(
+                    needs_to_payload(
+                        party_needs(
+                            participant_count,
+                            include_candles=include_candles,
+                            candle_quantity=candle_quantity,
+                        )
+                    )
+                )
 
             hard_constraints = load_json(contract["hard_constraints_json"], [])
             for constraint in hard_constraints:
@@ -1996,6 +2302,17 @@ class MissionWorkflow:
             self._check_revision(mission, expected_revision)
             if mission["status"] in {"executing", "recovering", "completed", "failed", "cancelled"}:
                 raise WorkflowConflictError("Mission can no longer be re-planned")
+            contract = connection.execute(
+                "SELECT needs_json FROM mission_contracts "
+                "WHERE mission_id = ? ORDER BY version DESC LIMIT 1",
+                (mission_id,),
+            ).fetchone()
+            if contract is None:
+                raise WorkflowConflictError("Mission has no contract")
+            if not load_json(contract["needs_json"], []):
+                raise WorkflowConflictError(
+                    "Portfolio re-planning is not available for gift missions"
+                )
             if self.portfolio_planner.repository.reusable_decision_id(
                 connection,
                 mission_id=mission_id,
@@ -4548,7 +4865,10 @@ class MissionWorkflow:
                 "mission_type": mission["mission_type"],
                 "budget_limit": money(mission["budget_limit_cents"]),
                 "currency": mission["currency"],
-                "deadline": mission["deadline"],
+                # Incomplete drafts use an internal sentinel because the legacy
+                # SQLite column is non-nullable. Never expose that sentinel as a
+                # user-confirmed deadline through the HTTP contract.
+                "deadline": mission["deadline"] if contract is not None else None,
                 "risk_level": mission["risk_level"],
                 "requires_approval": bool(mission["requires_approval"]),
                 "locale": mission["locale"],
@@ -5069,22 +5389,22 @@ class MissionWorkflow:
         for field in draft.missing_fields:
             if field == "shopping_scope":
                 questions.append(
-                    "Czy kupuję prezenty, czy wyposażenie przyjęcia urodzinowego?"
+                    "Should I buy gifts or birthday party supplies?"
                     if draft.occasion == Occasion.BIRTHDAY
-                    else "Jakie wymagania powinien spełniać ten zakup?"
+                    else "What should this purchase include?"
                 )
             elif field == "participants":
                 if draft.shopping_scope != ShoppingScope.AMBIGUOUS:
-                    questions.append("Dla ilu osób mam zrobić zakupy?")
+                    questions.append("How many people should I buy for?")
             elif field == "recipient_age":
-                questions.append("W jakim wieku są osoby, dla których kupuję prezenty?")
+                questions.append("How old are the gift recipients?")
             elif field in {"budget", "budget_currency"}:
-                questions.append("Jaki jest maksymalny budżet i waluta?")
+                questions.append("What is the maximum budget and currency?")
             elif field == "deadline":
-                questions.append("Na jaki dzień i godzinę potrzebna jest dostawa?")
+                questions.append("What delivery date and time do you need?")
             elif field == "deadline_time":
-                questions.append("Do której godziny tego dnia potrzebna jest dostawa?")
-        return questions or ["Czy potwierdzasz ten kontrakt misji?"]
+                questions.append("What time should delivery arrive by?")
+        return questions or ["Do you confirm this mission?"]
 
     @staticmethod
     def _catalog_constraints(

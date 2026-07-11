@@ -31,6 +31,10 @@ def approval_payload(detail: dict) -> dict:
         "currency": approval["currency"],
         "plan_hash": approval["plan_hash"],
         "merchant_id": approval["merchant_id"],
+        "voice_transcript": (
+            f"Tak, zatwierdzam {approval['amount']} {approval['currency']} "
+            f"u {approval['merchant_id']}."
+        ),
     }
 
 

@@ -1,8 +1,10 @@
 import {
   cancelMission,
   correctMission,
+  createVoiceTranscriptMission,
   createVoiceMission,
   listMissions,
+  replanMission,
   selectDeliveryOption,
 } from "@/api/client";
 import { File as ExpoFile } from "expo-file-system";
@@ -61,14 +63,20 @@ describe("mission API client", () => {
     );
   });
 
-  it("selects delivery using the option_id contract and supports cancellation", async () => {
+  it("selects delivery, replans, and cancels with revision guards", async () => {
     fetchMock.mockResolvedValue(response(detail));
     await selectDeliveryOption("mission-1", { option_id: "standard", expected_revision: 2 });
+    await replanMission("mission-1", 2);
     await cancelMission("mission-1", 2);
 
     expect(fetchMock.mock.calls[0]?.[1]).toEqual(expect.objectContaining({ method: "PUT", body: JSON.stringify({ option_id: "standard", expected_revision: 2 }) }));
-    expect(fetchMock.mock.calls[1]?.[0]).toEqual(expect.stringContaining("/v1/missions/mission-1/cancel"));
+    expect(fetchMock.mock.calls[1]?.[0]).toEqual(expect.stringContaining("/v1/missions/mission-1/replan"));
     expect(fetchMock.mock.calls[1]?.[1]).toEqual(expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({ expected_revision: 2 }),
+    }));
+    expect(fetchMock.mock.calls[2]?.[0]).toEqual(expect.stringContaining("/v1/missions/mission-1/cancel"));
+    expect(fetchMock.mock.calls[2]?.[1]).toEqual(expect.objectContaining({
       method: "POST",
       body: JSON.stringify({ expected_revision: 2 }),
     }));
@@ -101,6 +109,34 @@ describe("mission API client", () => {
     }
   });
 
+  it("turns a failed network fetch into an actionable backend error", async () => {
+    fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
+
+    await expect(listMissions()).rejects.toMatchObject({
+      status: 0,
+      message: expect.stringContaining("Check that the backend is running"),
+    });
+  });
+
+  it("aborts a stalled API request instead of leaving the phone waiting forever", async () => {
+    jest.useFakeTimers();
+    fetchMock.mockImplementation((_url: string, init?: RequestInit) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => {
+        reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+      }, { once: true });
+    }));
+    try {
+      const rejection = expect(listMissions()).rejects.toMatchObject({
+        status: 0,
+        message: expect.stringContaining("did not respond within 20 seconds"),
+      });
+      await jest.advanceTimersByTimeAsync(20_000);
+      await rejection;
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it("uploads a voice recording as FormData without forcing a JSON content type", async () => {
     fetchMock.mockResolvedValue(response({ ...detail, transcription: { text: "Buy coffee", language: "en", model: "gpt-4o-transcribe" } }));
     const result = await createVoiceMission({ audioUri: "file:///tmp/mission.m4a", locale: "en-PL", timezone: "Europe/Warsaw", language: "en-PL" });
@@ -110,5 +146,27 @@ describe("mission API client", () => {
     expect(new Headers(init.headers).get("Content-Type")).toBeNull();
     expect(ExpoFile).toHaveBeenCalledWith("file:///tmp/mission.m4a");
     expect(result.transcript).toBe("Buy coffee");
+  });
+
+  it("persists a Realtime microphone transcript through the voice contract", async () => {
+    fetchMock.mockResolvedValue(response(detail));
+
+    await createVoiceTranscriptMission({
+      transcript: "Prezenty dla pięciu dziesięciolatków do 500 PLN.",
+      locale: "pl-PL",
+      timezone: "Europe/Warsaw",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/v1/missions/voice"),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          transcript: "Prezenty dla pięciu dziesięciolatków do 500 PLN.",
+          locale: "pl-PL",
+          timezone: "Europe/Warsaw",
+        }),
+      }),
+    );
   });
 });

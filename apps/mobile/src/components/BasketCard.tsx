@@ -10,10 +10,10 @@ export function BasketCard({ basket }: { basket: Basket }) {
       <View style={styles.header}>
         <View style={styles.headerIcon}><ShoppingBasket size={22} color={colors.primaryBright} /></View>
         <View style={styles.headerText}>
-          <Text style={styles.title}>Optimized basket</Text>
+          <Text style={styles.title}>Proposed basket</Text>
           <Text style={styles.subtitle}>{basket.items.length} items · {basket.merchant}</Text>
         </View>
-        <View style={styles.safe}><CheckCircle2 size={15} color={colors.success} /><Text style={styles.safeText}>Safe</Text></View>
+        <View style={styles.safe}><CheckCircle2 size={15} color={colors.success} /><Text style={styles.safeText}>Validated</Text></View>
       </View>
       <View style={styles.items}>
         {basket.items.map((item) => (
@@ -24,14 +24,14 @@ export function BasketCard({ basket }: { basket: Basket }) {
               <Text style={styles.itemMeta}>{item.category}{item.nut_free ? " · nut-free" : ""}</Text>
               {item.replaced_item ? <Text style={styles.replaced}>Replaced {item.replaced_item}</Text> : null}
             </View>
-            <Text style={styles.itemPrice}>{item.total.toFixed(0)} {basket.currency}</Text>
+            <Text style={styles.itemPrice}>{item.total.toFixed(2)} {basket.currency}</Text>
           </View>
         ))}
       </View>
       <View style={styles.totalRows}>
-        <View style={styles.totalRow}><Text style={styles.totalLabel}>Subtotal</Text><Text style={styles.totalValue}>{basket.subtotal.toFixed(0)} {basket.currency}</Text></View>
-        <View style={styles.totalRow}><Text style={styles.totalLabel}>Delivery</Text><Text style={styles.totalValue}>{basket.delivery_cost.toFixed(0)} {basket.currency}</Text></View>
-        <View style={[styles.totalRow, styles.finalRow]}><Text style={styles.finalLabel}>Total</Text><Text style={styles.finalValue}>{basket.total.toFixed(0)} {basket.currency}</Text></View>
+        <View style={styles.totalRow}><Text style={styles.totalLabel}>Subtotal</Text><Text style={styles.totalValue}>{basket.subtotal.toFixed(2)} {basket.currency}</Text></View>
+        <View style={styles.totalRow}><Text style={styles.totalLabel}>Delivery</Text><Text style={styles.totalValue}>{basket.delivery_cost.toFixed(2)} {basket.currency}</Text></View>
+        <View style={[styles.totalRow, styles.finalRow]}><Text style={styles.finalLabel}>Total</Text><Text style={styles.finalValue}>{basket.total.toFixed(2)} {basket.currency}</Text></View>
       </View>
     </GlassCard>
   );
@@ -63,4 +63,3 @@ const styles = StyleSheet.create({
   finalLabel: { ...type.bodyMedium, color: colors.text },
   finalValue: { ...type.h3, color: colors.text },
 });
-

@@ -7,7 +7,12 @@ from math import ceil
 from .model import NeedSpec
 
 
-def party_needs(participants: int) -> tuple[NeedSpec, ...]:
+def party_needs(
+    participants: int,
+    *,
+    include_candles: bool = True,
+    candle_quantity: int = 1,
+) -> tuple[NeedSpec, ...]:
     """Create the deterministic initial ProblemDefinition for a party mission.
 
     The result is persisted in the mission contract. The planner never reads
@@ -15,7 +20,7 @@ def party_needs(participants: int) -> tuple[NeedSpec, ...]:
     """
 
     count = max(1, participants)
-    return (
+    needs = (
         NeedSpec("snacks", "snacks", max(1, ceil(count / 4))),
         NeedSpec("drinks_juice", "drinks", max(1, ceil(count * 0.4)), ("juice",)),
         NeedSpec("drinks_water", "drinks", max(1, ceil(count * 0.3)), ("water",)),
@@ -25,8 +30,18 @@ def party_needs(participants: int) -> tuple[NeedSpec, ...]:
         NeedSpec("plates", "tableware", 1, ("plates",)),
         NeedSpec("cups", "tableware", 1, ("cups",)),
         NeedSpec("napkins", "napkins", 1, ("napkins",)),
-        NeedSpec("candles", "candles", 1, ("candles",)),
     )
+    if include_candles:
+        return (
+            *needs,
+            NeedSpec(
+                "candles",
+                "candles",
+                max(1, candle_quantity),
+                ("candles",),
+            ),
+        )
+    return needs
 
 
 def needs_to_payload(needs: tuple[NeedSpec, ...]) -> list[dict[str, object]]:

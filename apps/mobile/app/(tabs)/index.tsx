@@ -1,18 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Check, ListTodo, WifiOff } from "lucide-react-native";
+import { Check, ListTodo } from "lucide-react-native";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import * as Speech from "expo-speech";
 import { AppScreen } from "@/components/AppScreen";
 import { MissionCard } from "@/components/MissionCard";
-import { MissionComposer } from "@/components/MissionComposer";
 import { LiveVoiceSheet } from "@/components/LiveVoiceSheet";
 import { InlineError, ScreenState } from "@/components/ScreenState";
 import { SectionHeader } from "@/components/SectionHeader";
 import { VoiceOrb } from "@/components/VoiceOrb";
-import { useCreateTextMission, useCreateVoiceMission, useMissions, useUserProfile, useUserSettings } from "@/api/hooks";
-import { demoFallbackEnabled } from "@/config/runtime";
-import { fallbackMissions } from "@/data/fallback";
+import { useCreateVoiceMission, useCreateVoiceTranscriptMission, useMissions, useUserProfile, useUserSettings } from "@/api/hooks";
 import { useVoiceStore } from "@/store/voice";
 import { colors, radii, spacing, type } from "@/theme/tokens";
 
@@ -31,15 +28,12 @@ export default function NowScreen() {
   const missionsQuery = useMissions({ sort: "updated" });
   const profileQuery = useUserProfile();
   const settingsQuery = useUserSettings();
-  const createText = useCreateTextMission();
+  const createVoiceTranscript = useCreateVoiceTranscriptMission();
   const createVoice = useCreateVoiceMission();
   const voice = useVoiceStore();
-  const [composerOpen, setComposerOpen] = useState(false);
   const [liveVoiceOpen, setLiveVoiceOpen] = useState(false);
   const handledLiveLink = useRef(false);
-  const [composerError, setComposerError] = useState<string | null>(null);
-  const usingFallback = demoFallbackEnabled && missionsQuery.isError;
-  const missions = missionsQuery.data?.items ?? (usingFallback ? fallbackMissions : []);
+  const missions = missionsQuery.data?.items ?? [];
   const active = missions.filter((item) => !["completed", "cancelled", "failed"].includes(item.status));
   const completed = missions.filter((item) => item.status === "completed" && isToday(item.completed_at));
 
@@ -59,22 +53,6 @@ export default function NowScreen() {
       rate: 0.98,
       language: settingsQuery.data?.voice_language || profileQuery.data?.locale || "en-PL",
     });
-  };
-
-  const submitText = async (transcript: string) => {
-    setComposerError(null);
-    try {
-      const result = await createText.mutateAsync({
-        transcript,
-        locale: profileQuery.data?.locale,
-        timezone: profileQuery.data?.timezone,
-      });
-      setComposerOpen(false);
-      speakConfirmation(result.confirmation);
-      openMission(result.mission_id);
-    } catch (error) {
-      setComposerError(errorMessage(error));
-    }
   };
 
   const submitVoice = async (audioUri: string | null) => {
@@ -102,8 +80,7 @@ export default function NowScreen() {
   };
 
   const submitLive = async (transcript: string) => {
-    setComposerError(null);
-    return createText.mutateAsync({
+    return createVoiceTranscript.mutateAsync({
       transcript,
       locale: profileQuery.data?.locale,
       timezone: profileQuery.data?.timezone,
@@ -128,10 +105,7 @@ export default function NowScreen() {
         </Pressable>
       </View>
 
-      {usingFallback ? (
-        <View style={styles.offlinePill}><WifiOff size={13} color={colors.warning} /><Text style={styles.offlineText}>Explicit demo fallback data</Text></View>
-      ) : null}
-      {missionsQuery.isError && !usingFallback ? (
+      {missionsQuery.isError ? (
         <View style={styles.notice}><InlineError message={errorMessage(missionsQuery.error)} onRetry={() => void missionsQuery.refetch()} /></View>
       ) : null}
 
@@ -164,14 +138,15 @@ export default function NowScreen() {
         </>
       )}
 
-      <MissionComposer visible={composerOpen} loading={createText.isPending} error={composerError} onClose={() => setComposerOpen(false)} onSubmit={submitText} />
       <LiveVoiceSheet
         visible={liveVoiceOpen}
         language={settingsQuery.data?.voice_language || profileQuery.data?.locale || "pl-PL"}
         onClose={() => setLiveVoiceOpen(false)}
-        onUseText={() => { setComposerError(null); setComposerOpen(true); }}
         onSubmitTranscript={submitLive}
-        onMissionCreated={() => setLiveVoiceOpen(false)}
+        onMissionCreated={(missionId) => {
+          setLiveVoiceOpen(false);
+          openMission(missionId);
+        }}
       />
     </AppScreen>
   );
@@ -185,8 +160,6 @@ const styles = StyleSheet.create({
   avatarRing: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, borderColor: colors.borderStrong, padding: 3 },
   avatar: { flex: 1, width: "100%", borderRadius: 18, backgroundColor: colors.surfaceElevated },
   pressed: { opacity: 0.68 },
-  offlinePill: { alignSelf: "center", flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 6, paddingHorizontal: spacing.sm, marginTop: spacing.md, backgroundColor: "rgba(255,184,77,0.08)", borderRadius: radii.round },
-  offlineText: { ...type.caption, color: colors.warning },
   notice: { marginTop: spacing.md },
   section: { marginTop: spacing.lg },
   cardList: { gap: spacing.sm },

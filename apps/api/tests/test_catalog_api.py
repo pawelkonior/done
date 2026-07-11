@@ -14,6 +14,7 @@ OFFER_KEYS = {
     "brand",
     "category",
     "unit_label",
+    "product_url",
     "price_cents",
     "currency",
     "price",
@@ -31,34 +32,36 @@ def test_catalog_returns_seeded_store_offers(client: TestClient) -> None:
     assert response.status_code == 200, response.text
     payload = response.json()
 
-    assert payload["total"] == 54
-    assert payload["limit"] == 100
+    assert payload["total"] == 140
+    assert payload["limit"] == 150
     assert payload["offset"] == 0
-    assert len(payload["offers"]) == 54
+    assert len(payload["offers"]) == 140
     assert payload["items"] == payload["offers"]
     assert set(payload["offers"][0]) == OFFER_KEYS
     assert isinstance(payload["offers"][0]["is_available"], bool)
+    assert payload["offers"][0]["product_url"].startswith("https://")
     assert payload["offers"][0]["price_cents"] >= 0
     assert payload["offers"][0]["quantity"] >= 0
-    water = next(
+    banana = next(
         offer
         for offer in payload["offers"]
-        if offer["store_id"] == "store-budget"
-        and offer["product_id"] == "product-water"
+        if offer["store_id"] == "store-delio"
+        and offer["product_id"] == "product-delio-a0000718"
     )
-    assert water["price_cents"] == 299
-    assert water["price"] == 2.99
-    assert water["price_display"] == "2.99 PLN"
-    assert water["quantity"] == 120
-    assert water["effective_status"] == "available"
+    assert banana["price_cents"] == 589
+    assert banana["price"] == 5.89
+    assert banana["price_display"] == "5.89 PLN"
+    assert banana["quantity"] == 199
+    assert banana["effective_status"] == "available"
+    assert banana["product_url"] == "https://delio.com.pl/products/A0000718-banan"
 
 
 def test_catalog_filters_store_category_and_availability(client: TestClient) -> None:
     response = client.get(
         "/v1/catalog/offers",
         params={
-            "store_id": "store-budget",
-            "category": "drinks",
+            "store_id": "store-delio",
+            "category": "fruit",
             "available": "true",
             "sort": "price_asc",
         },
@@ -66,49 +69,57 @@ def test_catalog_filters_store_category_and_availability(client: TestClient) -> 
     assert response.status_code == 200, response.text
     payload = response.json()
 
-    assert payload["total"] == 2
-    assert [offer["price_cents"] for offer in payload["offers"]] == [299, 699]
-    assert all(offer["store_id"] == "store-budget" for offer in payload["offers"])
+    assert payload["total"] == 15
+    assert payload["offers"][0]["price_cents"] == 219
+    assert all(offer["store_id"] == "store-delio" for offer in payload["offers"])
+    assert all(offer["category"] == "fruit" for offer in payload["offers"])
     assert all(offer["is_available"] for offer in payload["offers"])
 
 
-def test_catalog_uses_effective_store_availability(client: TestClient) -> None:
-    closed = client.get(
-        "/v1/catalog/offers",
-        params={"effective_status": "store_unavailable"},
+def test_catalog_exposes_low_and_out_of_stock_offers(client: TestClient) -> None:
+    unavailable = client.get(
+        "/v1/catalog/offers", params={"effective_status": "out_of_stock"}
     )
-    assert closed.status_code == 200, closed.text
-    closed_payload = closed.json()
+    assert unavailable.status_code == 200, unavailable.text
+    unavailable_payload = unavailable.json()
 
-    assert closed_payload["total"] == 5
-    assert all(offer["store_id"] == "store-weekend" for offer in closed_payload["offers"])
-    assert all(not offer["is_available"] for offer in closed_payload["offers"])
-    assert {
-        offer["inventory_status"] for offer in closed_payload["offers"]
-    } == {"available", "low_stock"}
+    assert unavailable_payload["total"] == 7
+    assert all(not offer["is_available"] for offer in unavailable_payload["offers"])
+    assert all(offer["quantity"] == 0 for offer in unavailable_payload["offers"])
+    assert {offer["store_id"] for offer in unavailable_payload["offers"]} == {
+        "store-delio",
+        "store-lidl",
+    }
 
-    available_water = client.get(
+    available_banana = client.get(
         "/v1/catalog/offers",
         params={
-            "product_id": "product-water",
+            "product_id": "product-delio-a0000718",
             "available": "true",
             "sort": "price_asc",
         },
     ).json()
-    assert available_water["total"] == 4
-    assert available_water["offers"][0]["price_cents"] == 299
+    assert available_banana["total"] == 1
+    assert available_banana["offers"][0]["price_cents"] == 589
 
     low_stock = client.get(
         "/v1/catalog/offers", params={"effective_status": "low_stock"}
     ).json()
-    assert low_stock["total"] == 6
+    assert low_stock["total"] == 5
 
 
 def test_catalog_search_price_range_and_pagination(client: TestClient) -> None:
-    search = client.get("/v1/catalog/offers", params={"q": "cupcakes"})
+    search = client.get("/v1/catalog/offers", params={"q": "CzuCzu"})
     assert search.status_code == 200
     assert search.json()["total"] == 1
-    assert search.json()["offers"][0]["product_id"] == "product-cupcakes"
+    assert search.json()["offers"][0]["sku"] == "SMYK-8103798"
+
+    minecraft = client.get(
+        "/v1/catalog/offers", params={"q": "Minecraft", "limit": 150}
+    )
+    assert minecraft.status_code == 200
+    assert minecraft.json()["total"] == 29
+    assert len(minecraft.json()["offers"]) == 29
 
     ranged = client.get(
         "/v1/catalog/offers",
@@ -142,6 +153,9 @@ def test_catalog_empty_and_invalid_filters(client: TestClient) -> None:
         "/v1/catalog/offers", params={"effective_status": "sometimes"}
     )
     assert invalid_status.status_code == 422
+
+    invalid_limit = client.get("/v1/catalog/offers", params={"limit": 151})
+    assert invalid_limit.status_code == 422
 
     invalid_range = client.get(
         "/v1/catalog/offers",

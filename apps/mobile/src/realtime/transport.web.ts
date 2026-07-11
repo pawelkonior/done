@@ -7,6 +7,24 @@ import type {
 const OPENAI_REALTIME_CALLS_URL = "https://api.openai.com/v1/realtime/calls";
 const CONNECTION_TIMEOUT_MS = 20_000;
 
+function connectionError(error: unknown): Error {
+  const name = error && typeof error === "object" && "name" in error
+    ? String((error as { name?: unknown }).name)
+    : "";
+  if (name === "NotAllowedError" || name === "SecurityError") {
+    return new Error("Microphone access is blocked. Allow microphone access and try again.");
+  }
+  if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+    return new Error("No microphone is available on this device.");
+  }
+  if (name === "NotReadableError" || name === "TrackStartError") {
+    return new Error("The microphone is busy or unavailable. Close other audio apps and try again.");
+  }
+  if (name === "AbortError") return new Error("Live voice negotiation timed out. Check your connection and try again.");
+  if (error instanceof Error && !["TypeError", "NetworkError"].includes(name)) return error;
+  return new Error("Live voice could not reach the voice service. Check your internet connection and try again.");
+}
+
 function waitForDataChannel(channel: RTCDataChannel): Promise<void> {
   if (channel.readyState === "open") return Promise.resolve();
   return new Promise((resolve, reject) => {
@@ -22,11 +40,40 @@ function waitForDataChannel(channel: RTCDataChannel): Promise<void> {
   });
 }
 
+function requestMicrophone(): Promise<MediaStream> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      settled = true;
+      reject(new Error("Microphone permission timed out. Allow microphone access and try again."));
+    }, CONNECTION_TIMEOUT_MS);
+    navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      video: false,
+    }).then((stream) => {
+      clearTimeout(timer);
+      if (settled) {
+        for (const track of stream.getTracks()) track.stop();
+        return;
+      }
+      settled = true;
+      resolve(stream);
+    }, (error: unknown) => {
+      clearTimeout(timer);
+      if (settled) return;
+      settled = true;
+      reject(error);
+    });
+  });
+}
+
 class WebRealtimeTransport implements RealtimeTransport {
   private peer: RTCPeerConnection | null = null;
   private channel: RTCDataChannel | null = null;
   private localStream: MediaStream | null = null;
   private remoteAudio: HTMLAudioElement | null = null;
+  private negotiationAbort: AbortController | null = null;
+  private generation = 0;
 
   constructor(private readonly callbacks: RealtimeTransportCallbacks) {}
 
@@ -35,6 +82,7 @@ class WebRealtimeTransport implements RealtimeTransport {
       throw new Error("This browser does not support microphone WebRTC sessions.");
     }
     this.disconnect();
+    const generation = this.generation;
     this.callbacks.onStateChange("connecting");
     try {
       const peer = new RTCPeerConnection();
@@ -55,10 +103,11 @@ class WebRealtimeTransport implements RealtimeTransport {
         if (stream) audio.srcObject = stream;
       });
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-        video: false,
-      });
+      const stream = await requestMicrophone();
+      if (generation !== this.generation) {
+        for (const track of stream.getTracks()) track.stop();
+        throw new Error("Live voice connection was closed.");
+      }
       this.localStream = stream;
       for (const track of stream.getAudioTracks()) peer.addTrack(track, stream);
 
@@ -75,14 +124,27 @@ class WebRealtimeTransport implements RealtimeTransport {
 
       const offer = await peer.createOffer();
       await peer.setLocalDescription(offer);
-      const sdpResponse = await fetch(OPENAI_REALTIME_CALLS_URL, {
-        method: "POST",
-        body: offer.sdp,
-        headers: {
-          Authorization: `Bearer ${ephemeralSecret}`,
-          "Content-Type": "application/sdp",
-        },
-      });
+      const negotiationAbort = new AbortController();
+      this.negotiationAbort = negotiationAbort;
+      const negotiationTimeout = setTimeout(
+        () => negotiationAbort.abort(),
+        CONNECTION_TIMEOUT_MS,
+      );
+      let sdpResponse: Response;
+      try {
+        sdpResponse = await fetch(OPENAI_REALTIME_CALLS_URL, {
+          method: "POST",
+          body: offer.sdp,
+          signal: negotiationAbort.signal,
+          headers: {
+            Authorization: `Bearer ${ephemeralSecret}`,
+            "Content-Type": "application/sdp",
+          },
+        });
+      } finally {
+        clearTimeout(negotiationTimeout);
+        if (this.negotiationAbort === negotiationAbort) this.negotiationAbort = null;
+      }
       if (!sdpResponse.ok) {
         throw new Error(`Live voice negotiation failed (${sdpResponse.status}).`);
       }
@@ -92,7 +154,7 @@ class WebRealtimeTransport implements RealtimeTransport {
     } catch (error) {
       this.disconnect();
       this.callbacks.onStateChange("failed");
-      const safeError = error instanceof Error ? error : new Error("Live voice could not start.");
+      const safeError = connectionError(error);
       this.callbacks.onError(safeError);
       throw safeError;
     }
@@ -104,6 +166,9 @@ class WebRealtimeTransport implements RealtimeTransport {
   }
 
   disconnect(): void {
+    this.generation += 1;
+    this.negotiationAbort?.abort();
+    this.negotiationAbort = null;
     this.channel?.close();
     this.channel = null;
     for (const track of this.localStream?.getTracks() ?? []) track.stop();
