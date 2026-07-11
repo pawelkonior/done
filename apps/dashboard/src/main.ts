@@ -1,6 +1,7 @@
 import "./styles.css";
 
 import { fetchEvents, fetchMissionDetail, fetchMissions } from "./api";
+import { displayMissionTitle } from "./copy";
 import { createDetailPanel, simulateLineItemPaymentFailure } from "./detail";
 import { createGraph } from "./graph";
 import { EVENT_NODE, FEEDBACK_EVENTS, WARN_EVENTS, WARN_SEVERITIES } from "./mapping";
@@ -40,7 +41,7 @@ function setMode(next: Mode, text: string): void {
 }
 
 function setMission(title: string, status: string | null): void {
-  missionTitleEl.textContent = title;
+  missionTitleEl.textContent = displayMissionTitle(title);
   if (status) {
     missionStatusEl.hidden = false;
     missionStatusEl.textContent = status.replaceAll("_", " ");
