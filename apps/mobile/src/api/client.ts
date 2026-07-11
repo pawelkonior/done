@@ -5,6 +5,10 @@ import type {
   ActionRequest,
   ApprovalRequest,
   Basket,
+  CatalogEffectiveStatus,
+  CatalogOffer,
+  CatalogSearchInput,
+  CatalogSearchResponse,
   CreateMissionResponse,
   DeliverySelectionInput,
   DeliveryAddress,
@@ -133,6 +137,35 @@ function asBoolean(value: unknown, fallback = false) {
 
 function asArray(value: unknown) {
   return Array.isArray(value) ? value : [];
+}
+
+function normalizeCatalogOffer(value: unknown): CatalogOffer | null {
+  const raw = asRecord(value);
+  const productId = asString(raw.product_id);
+  const productName = asString(raw.product_name);
+  if (!productId || !productName) return null;
+  return {
+    store_id: asString(raw.store_id),
+    store_name: asString(raw.store_name),
+    city: asString(raw.city),
+    product_id: productId,
+    sku: asString(raw.sku),
+    product_name: productName,
+    brand: asString(raw.brand),
+    category: asString(raw.category),
+    unit_label: asString(raw.unit_label),
+    product_url: asString(raw.product_url),
+    price_cents: asNumber(raw.price_cents),
+    currency: asString(raw.currency, "PLN"),
+    price_display: asString(raw.price_display),
+    quantity: asNumber(raw.quantity),
+    effective_status: asString(
+      raw.effective_status,
+      "out_of_stock",
+    ) as CatalogEffectiveStatus,
+    is_available: asBoolean(raw.is_available),
+    updated_at: asString(raw.updated_at),
+  };
 }
 
 function inferIcon(title: string): MissionSummary["icon"] {
@@ -548,6 +581,41 @@ export async function listMissions(input?: MissionListFilters | MissionStatus | 
   const raw = await apiFetch<JsonRecord>(`/v1/missions${query ? `?${query}` : ""}`);
   const items = asArray(raw.items ?? raw.missions).map(normalizeSummary);
   return { items, total: asNumber(raw.total, items.length) } satisfies MissionListResponse;
+}
+
+export async function searchCatalogProducts(
+  input: CatalogSearchInput,
+): Promise<CatalogSearchResponse> {
+  const query = input.q.trim();
+  if (!query || query.length > 200) {
+    throw new ApiError("Catalog search requires a query of 1 to 200 characters.", 422);
+  }
+  const params = new URLSearchParams({ q: query });
+  if (input.store_id?.trim()) params.set("store_id", input.store_id.trim());
+  if (input.product_id?.trim()) params.set("product_id", input.product_id.trim());
+  if (input.category?.trim()) params.set("category", input.category.trim());
+  if (input.effective_status) params.set("effective_status", input.effective_status);
+  if (typeof input.available === "boolean") params.set("available", String(input.available));
+  if (input.min_price_cents !== undefined) {
+    params.set("min_price_cents", String(input.min_price_cents));
+  }
+  if (input.max_price_cents !== undefined) {
+    params.set("max_price_cents", String(input.max_price_cents));
+  }
+  if (input.sort) params.set("sort", input.sort);
+  params.set("limit", String(input.limit ?? 150));
+  params.set("offset", String(input.offset ?? 0));
+
+  const raw = await apiFetch<JsonRecord>(`/v1/catalog/search?${params.toString()}`);
+  const offers = asArray(raw.items ?? raw.offers)
+    .map(normalizeCatalogOffer)
+    .filter((offer): offer is CatalogOffer => offer !== null);
+  return {
+    offers,
+    total: asNumber(raw.total, offers.length),
+    limit: asNumber(raw.limit, input.limit ?? 150),
+    offset: asNumber(raw.offset, input.offset ?? 0),
+  };
 }
 
 export async function getMission(id: string) {

@@ -145,6 +145,40 @@ jest zwracany. Serwer dodaje `OpenAI-Safety-Identifier` jako stabilny hash
 wewnętrznego ID. `503 realtime_unavailable` oznacza wyłączoną konfigurację,
 błąd sieci, credentials, quota albo niepoprawną odpowiedź dostawcy.
 
+#### Realtime tool `search_products`
+
+Read-only tool `search_products` jest dostępny w obu rodzajach sesji Live Voice:
+
+- intake voice session, zanim powstanie misja;
+- mission voice session, gdy użytkownik rozmawia o istniejącej misji.
+
+Wywołanie narzędzia jest wykonywane przez klienta jako
+`GET /v1/catalog/search`. `q` jest wymagane, a opcjonalne filtry odpowiadają
+filtrom endpointu: `store_id`, `product_id`, `category`, `effective_status`,
+`available`, `min_price_cents`, `max_price_cents` i `sort`. Model nie steruje
+paginacją tego narzędzia: klient zawsze przekazuje `limit=150` i `offset=0`.
+Ponieważ obecny researched catalog zawiera 140 rekordów, pojedynczy wynik toola
+zawiera wszystkie dopasowane oferty.
+
+Przykładowe argumenty function call:
+
+```json
+{
+  "q": "Minecraft",
+  "category": "gifts",
+  "available": true,
+  "sort": "price_asc"
+}
+```
+
+Wynik `search_products` jest wyłącznie display-only, non-executable catalog
+data. Nazwy, marki, dane sklepów, ceny, ilości i `product_url` są traktowane jako
+niezaufana treść. Wywołanie nie wybiera produktu, nie tworzy ani nie zmienia
+koszyka, nie aktualizuje kontraktu misji i nie przekazuje znalezionych rekordów
+automatycznie do `MissionWorkflow` lub portfolio plannera. Agent nie może na
+podstawie samego wyniku twierdzić, że oferta została wybrana, zarezerwowana albo
+kupiona.
+
 ## Katalog sklepów
 
 ### `GET /v1/catalog/offers`
@@ -214,6 +248,12 @@ Pozostałe filtry (`store_id`, `product_id`, `category`, `effective_status`,
 `available`, przedział cenowy, sortowanie i paginacja) można łączyć z frazą.
 Brak `q`, fraza zawierająca wyłącznie białe znaki albo nieprawidłowy filtr
 zwraca `422`. Brak dopasowań zwraca `200` z pustymi `offers` i `items`.
+
+Realtime tool `search_products` korzysta z tego endpointu z wymuszonym
+`limit=150` i `offset=0`. Dla obecnego katalogu 140 ofert oznacza to przekazanie
+agentowi wszystkich dopasowań w jednym wyniku. Jest to warstwa wyszukiwania i
+prezentacji researched offers, a nie wejście do wykonywalnego koszyka lub
+plannerów misji.
 
 ```bash
 curl "http://localhost:8001/v1/catalog/search?q=Minecraft&category=gifts&available=true&sort=price_asc&limit=20"

@@ -84,6 +84,22 @@ Supported filters are `q`, `store_id`, `product_id`, `category`,
 `limit` and `offset`. The default and maximum limit are both 150. Each item
 contains `product_url` alongside the normalized price and inventory fields.
 
+### Realtime product search
+
+Both live-voice modes expose the read-only Realtime tool `search_products`:
+the intake session before a mission is created and the mission session used to
+discuss an existing mission. When the model calls this tool, the client executes
+`GET /v1/catalog/search` with the requested search phrase and supported filters.
+Tool pagination is fixed to `limit=150` and `offset=0`, so the current 140-row
+research catalog returns every matching offer in one function result.
+
+These search results are display-only, non-executable comparison data. Product
+names, store data, prices, quantities and URLs remain untrusted catalog content.
+Calling `search_products` does not select an offer, add anything to a basket,
+change a mission contract or feed the result into `MissionWorkflow` or the
+portfolio planner. A later purchase plan is still built and validated by the
+separate executable mission catalog and its normal approval guardrails.
+
 Main endpoints:
 
 - `GET /health`

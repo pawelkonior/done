@@ -10,7 +10,10 @@ import {
 import type { RealtimeCommand } from "@/realtime/events";
 import type { MissionDetail } from "@/types/domain";
 
-type MissionRealtimeCommand = Exclude<RealtimeCommand, { name: "submit_mission" }>;
+type MissionRealtimeCommand = Exclude<
+  RealtimeCommand,
+  { name: "submit_mission" } | { name: "search_products" }
+>;
 
 export interface MissionCommandContext {
   missionId: string;

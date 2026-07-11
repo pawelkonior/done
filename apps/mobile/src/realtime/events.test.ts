@@ -125,6 +125,56 @@ describe("Realtime event parsing", () => {
     });
   });
 
+  it("parses a strict read-only product search with optional filters", () => {
+    expect(parseRealtimeCommand(responseDone("search_products", {
+      q: "  Świeczka Minecraft  ",
+      store_id: "store-smyk",
+      product_id: "product-lego-minecraft",
+      category: "gifts",
+      effective_status: "available",
+      available: true,
+      min_price_cents: 1000,
+      max_price_cents: 10000,
+      sort: "price_asc",
+    }))).toEqual({
+      name: "search_products",
+      callId: "call-1",
+      query: "Świeczka Minecraft",
+      storeId: "store-smyk",
+      productId: "product-lego-minecraft",
+      category: "gifts",
+      effectiveStatus: "available",
+      available: true,
+      minPriceCents: 1000,
+      maxPriceCents: 10000,
+      sort: "price_asc",
+    });
+
+    expect(parseRealtimeCommand(responseDone("search_products", {
+      q: "Minecraft",
+    }))).toEqual({
+      name: "search_products",
+      callId: "call-1",
+      query: "Minecraft",
+    });
+  });
+
+  it("rejects unsafe product-search arguments", () => {
+    for (const args of [
+      { q: "   " },
+      { q: "x".repeat(201) },
+      { q: "Minecraft", extra: true },
+      { q: "Minecraft", store_id: "x".repeat(101) },
+      { q: "Minecraft", available: "true" },
+      { q: "Minecraft", min_price_cents: -1 },
+      { q: "Minecraft", min_price_cents: 2000, max_price_cents: 1000 },
+      { q: "Minecraft", effective_status: "sometimes" },
+      { q: "Minecraft", sort: "relevance" },
+    ]) {
+      expect(parseRealtimeCommand(responseDone("search_products", args))).toBeNull();
+    }
+  });
+
   it("parses guarded purchase approval and rejection commands", () => {
     expect(parseRealtimeCommand(responseDone("approve_purchase", {
       mission_id: "mission-1",
