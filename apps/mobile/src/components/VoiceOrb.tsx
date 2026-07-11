@@ -77,7 +77,7 @@ export function VoiceOrb({
         onPressOut={() => void pressOut()}
         disabled={isSubmitting}
         accessibilityRole="button"
-        accessibilityLabel="Tap for a realtime transcript or hold for a local recording"
+        accessibilityLabel="Tap for GPT Realtime 2 with live captions, or hold to record for GPT-4o Transcribe"
         testID="voice-orb"
       >
         <Animated.View style={[styles.glow, { opacity: glowOpacity, transform: [{ scale: orbScale }] }]} />
@@ -101,17 +101,17 @@ export function VoiceOrb({
         </Animated.View>
       </Pressable>
       <Text style={styles.title}>
-        {isSubmitting ? "Understanding…" : isRecording ? "Local recording…" : "Tap for live transcript"}
+        {isSubmitting ? "Understanding…" : isRecording ? "Recording for OpenAI STT…" : "Tap for live transcript"}
       </Text>
       {isRecording ? (
         <>
           <Text style={styles.subtitle}>{recordingDuration}s · release when done</Text>
-          <Text style={styles.localHint}>Text appears after release in local Whisper mode</Text>
+          <Text style={styles.sttHint}>Release to transcribe with GPT-4o Transcribe</Text>
         </>
       ) : (
         <>
-          <View style={styles.liveLabel}><Sparkles size={13} color={colors.primaryBright} /><Text style={styles.liveText}>ChatGPT Live 1 · realtime voice + text</Text></View>
-          <Text style={styles.localHint}>Hold for local Whisper · text after release</Text>
+          <View style={styles.liveLabel}><Sparkles size={13} color={colors.primaryBright} /><Text style={styles.liveText}>GPT Realtime 2 · realtime voice + captions</Text></View>
+          <Text style={styles.sttHint}>Hold for GPT-4o Transcribe · text after release</Text>
           {onType ? (
             <Pressable onPress={() => { setError(null); onType(); }} testID="open-mission-composer" accessibilityRole="button">
               <Text style={styles.subtitle}>or type a new mission</Text>
@@ -162,6 +162,6 @@ const styles = StyleSheet.create({
   subtitle: { ...type.body, color: colors.textSecondary, marginTop: spacing.xs },
   liveLabel: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: spacing.xs },
   liveText: { ...type.caption, color: colors.primaryBright },
-  localHint: { ...type.caption, color: colors.textMuted, marginTop: 4, textAlign: "center" },
+  sttHint: { ...type.caption, color: colors.textMuted, marginTop: 4, textAlign: "center" },
   error: { ...type.caption, color: colors.error, marginTop: spacing.sm, textAlign: "center", maxWidth: 300 },
 });

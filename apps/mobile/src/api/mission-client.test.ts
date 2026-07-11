@@ -84,7 +84,7 @@ describe("mission API client", () => {
   });
 
   it("uploads a voice recording as FormData without forcing a JSON content type", async () => {
-    fetchMock.mockResolvedValue(response({ ...detail, transcription: { text: "Buy coffee", language: "en", model: "whisper" } }));
+    fetchMock.mockResolvedValue(response({ ...detail, transcription: { text: "Buy coffee", language: "en", model: "gpt-4o-transcribe" } }));
     const result = await createVoiceMission({ audioUri: "file:///tmp/mission.m4a", locale: "en-PL", timezone: "Europe/Warsaw", language: "en-PL" });
 
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
