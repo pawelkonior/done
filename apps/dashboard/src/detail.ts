@@ -8,6 +8,26 @@ export interface DetailPanel {
 
 type Tone = "info" | "warn" | "ok";
 
+const ENGLISH_PRODUCT_NAMES: Record<string, string> = {
+  "cake-vanilla": "Nut-free vanilla cake",
+  "candles-ten": "Birthday candles",
+  "decor-balloons": "Biodegradable balloons",
+  "decor-banner": "Happy Birthday banner",
+  "drink-apple": "Apple juice 1 L",
+  "drink-water": "Still water 1.5 L",
+  "napkins-color": "Colourful napkins",
+  "snack-pretzels": "Mini pretzels",
+  "snack-crackers": "Nut-free crackers",
+  "table-cups": "Paper cups",
+  "table-plates": "Paper plates",
+};
+
+function productName(productId: string | null | undefined): string {
+  if (productId && ENGLISH_PRODUCT_NAMES[productId]) return ENGLISH_PRODUCT_NAMES[productId];
+  const identifier = productId?.replace(/^product-/, "").toUpperCase() || "UNSPECIFIED";
+  return `Catalog item ${identifier}`;
+}
+
 function element(tag: string, className?: string): HTMLElement {
   const item = document.createElement(tag);
   if (className) item.className = className;
@@ -76,7 +96,11 @@ function paymentRow(payment: PaymentAttempt): HTMLElement {
   const status = element("span", "payment-status");
   status.textContent = label(payment.status);
   const detail = element("span", "payment-detail");
-  detail.textContent = [money(payment.amount, payment.currency), payment.decline_code].filter(Boolean).join(" · ");
+  detail.textContent = [
+    money(payment.amount, payment.currency),
+    payment.product_id ? `Line item: ${productName(payment.product_id)}` : null,
+    payment.decline_code,
+  ].filter(Boolean).join(" · ");
   root.append(provider, status, detail);
   return root;
 }
@@ -85,14 +109,21 @@ function paymentIncident(detail: MissionDetail): HTMLElement | null {
   const declined = detail.payment_attempts.find((payment) => payment.status === "declined");
   if (!declined) return null;
 
-  const recoveredBy = detail.payment_attempts.find((payment) => payment.status === "authorized");
+  const recoveredBy = declined.simulated
+    ? undefined
+    : detail.payment_attempts.find((payment) => payment.status === "authorized");
   const root = element("div", "payment-incident");
   root.dataset.recovered = String(Boolean(recoveredBy));
   const title = element("strong");
-  title.textContent = recoveredBy ? "Payment failure recovered" : "Payment failed";
+  title.textContent = declined.simulated
+    ? "Simulated line-item payment failure"
+    : recoveredBy ? "Payment failure recovered" : "Payment failed";
   const body = element("span");
   const failedAttempt = `${declined.provider} declined ${money(declined.amount, declined.currency)}${declined.decline_code ? ` (${declined.decline_code})` : ""}`;
-  body.textContent = recoveredBy
+  const failedLine = declined.product_id ? ` for ${productName(declined.product_id)}` : "";
+  body.textContent = declined.simulated
+    ? `${failedAttempt}${failedLine}. This is a dashboard-only simulation: it does not change the API, reservation or order.`
+    : recoveredBy
     ? `${failedAttempt}. The failed attempt created no order; ${recoveredBy.provider} authorised the retry.`
     : `${failedAttempt}. No order has been confirmed from this attempt; the workflow is waiting to reroute or request action.`;
   root.append(title, body);
@@ -174,6 +205,31 @@ function purchasePath(detail: MissionDetail): HTMLElement {
   return path;
 }
 
+/**
+ * A client-only demonstration of one split-payment line failing. It never
+ * writes to the API and is deliberately labelled as simulated in the UI.
+ */
+export function simulateLineItemPaymentFailure(detail: MissionDetail): MissionDetail {
+  const target = detail.basket?.items.at(-1);
+  if (!target || detail.payment_attempts.some((payment) => payment.simulated)) return detail;
+  return {
+    ...detail,
+    payment_attempts: [
+      ...detail.payment_attempts,
+      {
+        provider: "PSP_SIM",
+        amount: target.line_total,
+        currency: target.currency,
+        status: "declined",
+        decline_code: "SIMULATED_LINE_ITEM_DECLINE",
+        product_id: target.product_id,
+        product_name: target.name,
+        simulated: true,
+      },
+    ],
+  };
+}
+
 function render(container: HTMLElement, detail: MissionDetail): void {
   container.replaceChildren();
 
@@ -193,17 +249,29 @@ function render(container: HTMLElement, detail: MissionDetail): void {
     const merchant = element("div", "basket-meta");
     merchant.textContent = `${detail.basket.merchant?.name ?? "Merchant pending"} · ${detail.basket.item_count} items · ${label(detail.basket.status)}`;
     const list = element("div", "basket-list");
+    const failedLineItems = new Set(
+      detail.payment_attempts
+        .filter((payment) => payment.status === "declined" && payment.product_id)
+        .map((payment) => payment.product_id),
+    );
     for (const item of detail.basket.items) {
       const row = element("div", "basket-item");
+      const failed = failedLineItems.has(item.product_id);
+      row.classList.toggle("payment-failed", failed);
       const name = element("strong", "basket-name");
-      name.textContent = item.name;
+      name.textContent = productName(item.product_id);
       const price = element("span", "basket-price");
       price.textContent = `${item.quantity} × ${money(item.unit_price, item.currency)} = ${money(item.line_total, item.currency)}`;
       row.append(name, price);
       if (item.replaced_product_name) {
         const replacement = element("span", "basket-replacement");
-        replacement.textContent = `Replaced: ${item.replaced_product_name}`;
+        replacement.textContent = `Replaced: ${productName(item.replaced_product_id)}`;
         row.append(replacement);
+      }
+      if (failed) {
+        const paymentFailure = element("span", "basket-payment-failure");
+        paymentFailure.textContent = "Line-item payment failed";
+        row.append(paymentFailure);
       }
       list.append(row);
     }
@@ -238,18 +306,27 @@ function render(container: HTMLElement, detail: MissionDetail): void {
 }
 
 function replayDetail(eventType: string): MissionDetail {
+  const paymentFailureVisible = ["payment.declined", "payment.rerouted", "payment.authorized", "order.confirmed", "mission.completed"].includes(eventType);
   const paid = ["payment.authorized", "order.confirmed", "mission.completed"].includes(eventType);
   const ordered = ["order.confirmed", "mission.completed"].includes(eventType);
-  const declined = eventType === "payment.declined";
   const waitingForApproval = ["approval.requested", "price.changed", "portfolio.replanned", "approval.superseded"].includes(eventType);
-  const paymentAttempts: PaymentAttempt[] = declined
-    ? [{ provider: "PSP_A", amount: 128.41, currency: "PLN", status: "declined", decline_code: "DO_NOT_HONOR" }]
-    : paid
-      ? [
-          { provider: "PSP_A", amount: 128.41, currency: "PLN", status: "declined", decline_code: "DO_NOT_HONOR" },
-          { provider: "PSP_B", amount: 128.41, currency: "PLN", status: "authorized", decline_code: null },
-        ]
-      : [];
+  const paymentAttempts: PaymentAttempt[] = paymentFailureVisible
+    ? [
+        {
+          provider: "PSP_A",
+          amount: 20.97,
+          currency: "PLN",
+          status: "declined",
+          decline_code: "DO_NOT_HONOR",
+          product_id: "snack-pretzels",
+          product_name: "Mini pretzels",
+          simulated: true,
+        },
+        ...(paid
+          ? [{ provider: "PSP_B", amount: 20.97, currency: "PLN", status: "authorized", decline_code: null, product_id: "snack-pretzels", product_name: "Mini pretzels", simulated: true }]
+          : []),
+      ]
+    : [];
 
   return {
     mission: {
@@ -271,10 +348,10 @@ function replayDetail(eventType: string): MissionDetail {
       currency: "PLN",
       status: ordered ? "ordered" : "planned",
       items: [
-        { id: "cake", name: "Birthday cake", quantity: 1, unit_price: 62, line_total: 62, currency: "PLN", substitution_allowed: false, replaced_product_name: null },
-        { id: "balloons", name: "Balloon set", quantity: 2, unit_price: 13.5, line_total: 27, currency: "PLN", substitution_allowed: true, replaced_product_name: null },
-        { id: "juice", name: "Apple juice", quantity: 3, unit_price: 6.47, line_total: 19.41, currency: "PLN", substitution_allowed: true, replaced_product_name: null },
-        { id: "crackers", name: "Nut-free crackers", quantity: 1, unit_price: 20, line_total: 20, currency: "PLN", substitution_allowed: true, replaced_product_name: eventType === "product.replaced" ? "Mini pretzels" : null },
+        { id: "cake", product_id: "cake-vanilla", name: "Nut-free vanilla cake", quantity: 1, unit_price: 62, line_total: 62, currency: "PLN", substitution_allowed: false, replaced_product_id: null, replaced_product_name: null },
+        { id: "balloons", product_id: "decor-balloons", name: "Biodegradable balloons", quantity: 2, unit_price: 13.5, line_total: 27, currency: "PLN", substitution_allowed: true, replaced_product_id: null, replaced_product_name: null },
+        { id: "juice", product_id: "drink-apple", name: "Apple juice 1 L", quantity: 3, unit_price: 6.47, line_total: 19.41, currency: "PLN", substitution_allowed: true, replaced_product_id: null, replaced_product_name: null },
+        { id: "pretzels", product_id: "snack-pretzels", name: "Mini pretzels", quantity: 3, unit_price: 6.99, line_total: 20.97, currency: "PLN", substitution_allowed: true, replaced_product_id: null, replaced_product_name: null },
       ],
     },
     approval: waitingForApproval ? { question: "Approve the planned basket for 128.41 PLN?", status: "pending", amount: 128.41, currency: "PLN", expires_at: null } : null,

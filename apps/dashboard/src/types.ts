@@ -29,12 +29,14 @@ export interface MissionSummary {
 
 export interface BasketItem {
   id: string;
+  product_id: string;
   name: string;
   quantity: number;
   unit_price: number;
   line_total: number;
   currency: string;
   substitution_allowed: boolean;
+  replaced_product_id: string | null;
   replaced_product_name: string | null;
 }
 
@@ -74,6 +76,9 @@ export interface PaymentAttempt {
   currency: string;
   status: string;
   decline_code: string | null;
+  product_id?: string | null;
+  product_name?: string | null;
+  simulated?: boolean;
 }
 
 export interface Order {

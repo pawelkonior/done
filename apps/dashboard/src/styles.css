@@ -145,6 +145,28 @@ html, body {
   gap: 12px;
 }
 
+.simulation-button {
+  padding: 5px 9px;
+  color: var(--warn);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  background: rgba(255, 174, 51, 0.08);
+  border: 1px solid rgba(255, 174, 51, 0.42);
+  border-radius: 6px;
+}
+
+.simulation-button:hover:not(:disabled),
+.simulation-button[data-active="true"] {
+  color: #351d00;
+  background: var(--warn);
+}
+
+.simulation-button:disabled { opacity: 0.38; cursor: not-allowed; }
+
 .stage {
   min-height: 0;
   display: flex;
@@ -247,6 +269,8 @@ html, body {
 .basket-name { color: var(--ink); font-size: 13px; }
 .basket-price { color: var(--ink-dim); font-family: var(--mono); font-size: 11px; }
 .basket-replacement { color: var(--warn); font-size: 11px; }
+.basket-item.payment-failed { padding: 8px; background: rgba(255, 93, 115, 0.06); border: 1px solid rgba(255, 93, 115, 0.42); border-radius: 6px; }
+.basket-payment-failure { color: var(--bad); font-family: var(--mono); font-size: 11px; font-weight: 700; }
 
 .basket-total {
   padding-top: 8px;

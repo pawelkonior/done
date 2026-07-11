@@ -1,12 +1,12 @@
 import "./styles.css";
 
 import { fetchEvents, fetchMissionDetail, fetchMissions } from "./api";
-import { createDetailPanel } from "./detail";
+import { createDetailPanel, simulateLineItemPaymentFailure } from "./detail";
 import { createGraph } from "./graph";
 import { EVENT_NODE, FEEDBACK_EVENTS, WARN_EVENTS, WARN_SEVERITIES } from "./mapping";
 import { REPLAY_MISSION_TITLE, REPLAY_SCRIPT } from "./replay";
 import { createTicker } from "./ticker";
-import type { LoopEvent } from "./types";
+import type { LoopEvent, MissionDetail } from "./types";
 
 const EVENTS_POLL_MS = 1000;
 const MISSIONS_POLL_MS = 5000;
@@ -19,6 +19,7 @@ const detailPanel = createDetailPanel(document.getElementById("detail-panel")!);
 const missionTitleEl = document.getElementById("mission-title")!;
 const missionStatusEl = document.getElementById("mission-status")!;
 const modeBadgeEl = document.getElementById("mode-badge")!;
+const simulateLineItemButton = document.getElementById("simulate-line-item-failure") as HTMLButtonElement;
 const clockEl = document.getElementById("clock")!;
 
 let mode: Mode = "connecting";
@@ -26,6 +27,8 @@ let missionId: string | null = null;
 let cursor = 0;
 let eventsInFlight = false;
 let detailInFlight = false;
+let latestDetail: MissionDetail | null = null;
+let lineItemFailureSimulation = false;
 let replayTimer: number | undefined;
 /** Bumped on every view reset so stale in-flight responses are discarded. */
 let generation = 0;
@@ -61,8 +64,26 @@ function resetView(): void {
   graph.reset();
   ticker.reset();
   detailPanel.reset();
+  latestDetail = null;
+  lineItemFailureSimulation = false;
+  updateSimulationButton();
   cursor = 0;
   generation += 1;
+}
+
+function updateSimulationButton(): void {
+  const available = Boolean(latestDetail?.basket?.items.length);
+  simulateLineItemButton.disabled = !available;
+  simulateLineItemButton.dataset.active = String(lineItemFailureSimulation);
+  simulateLineItemButton.textContent = lineItemFailureSimulation
+    ? "clear line-item failure"
+    : "simulate line-item failure";
+}
+
+function renderDetail(detail: MissionDetail): void {
+  latestDetail = detail;
+  detailPanel.update(lineItemFailureSimulation ? simulateLineItemPaymentFailure(detail) : detail);
+  updateSimulationButton();
 }
 
 function stopReplay(): void {
@@ -127,7 +148,7 @@ async function pollDetail(): Promise<void> {
     const detail = await fetchMissionDetail(missionId);
     if (requestGeneration !== generation) return;
     setMission(detail.mission.title, detail.mission.status);
-    detailPanel.update(detail);
+    renderDetail(detail);
   } catch {
     // The graph and event ticker remain available if this read-only request fails.
   } finally {
@@ -153,6 +174,14 @@ async function pollMissions(): Promise<void> {
 window.setInterval(() => {
   clockEl.textContent = new Date().toLocaleTimeString("en-GB", { hour12: false });
 }, 1000);
+
+simulateLineItemButton.addEventListener("click", () => {
+  if (!latestDetail?.basket?.items.length) return;
+  lineItemFailureSimulation = !lineItemFailureSimulation;
+  renderDetail(latestDetail);
+});
+
+updateSimulationButton();
 
 void pollMissions();
 window.setInterval(() => void pollMissions(), MISSIONS_POLL_MS);
