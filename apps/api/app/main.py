@@ -215,7 +215,8 @@ def create_app(
         item.strip()
         for item in os.getenv(
             "DONE_CORS_ORIGINS",
-            "http://localhost:8081,http://127.0.0.1:8081",
+            "http://localhost:8081,http://127.0.0.1:8081,"
+            "http://localhost:8090,http://127.0.0.1:8090",
         ).split(",")
         if item.strip()
     ]

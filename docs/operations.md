@@ -34,6 +34,7 @@ Uruchamiane są równolegle:
 
 - API na `http://127.0.0.1:8001`;
 - Expo web, zwykle na `http://localhost:8081`.
+- dashboard pętli decyzyjnej na `http://localhost:8090`.
 
 Skrypt `npm run api` włącza serwerową transkrypcję OpenAI. Realtime jest
 kontrolowany przez `DONE_REALTIME_ENABLED` w środowisku. Brak połączenia z OpenAI

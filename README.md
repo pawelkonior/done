@@ -53,6 +53,7 @@ Po uruchomieniu:
 
 - aplikacja webowa: [http://localhost:8081](http://localhost:8081)
 - API: [http://localhost:8001](http://localhost:8001)
+- dashboard pętli decyzyjnej: [http://localhost:8090](http://localhost:8090)
 - dokumentacja API: [http://localhost:8001/docs](http://localhost:8001/docs)
 
 ### Uruchomienie na fizycznym telefonie
