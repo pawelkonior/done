@@ -145,6 +145,54 @@ jest zwracany. Serwer dodaje `OpenAI-Safety-Identifier` jako stabilny hash
 wewnętrznego ID. `503 realtime_unavailable` oznacza wyłączoną konfigurację,
 błąd sieci, credentials, quota albo niepoprawną odpowiedź dostawcy.
 
+## Katalog sklepów
+
+### `GET /v1/catalog/offers`
+
+Zwraca produkty wraz ze sklepem, ceną, ilością i efektywną dostępnością.
+Opcjonalne filtry: `q`, `store_id`, `product_id`, `category`,
+`effective_status`, `available`, `min_price_cents`, `max_price_cents`, `sort`,
+`limit` oraz `offset`. `total` jest liczbą rekordów przed paginacją.
+Poniższy przykład jest skrócony; pole `items` powtarza dokładnie listę
+`offers` i zostało pominięte.
+
+```json
+{
+  "offers": [
+    {
+      "store_id": "store-budget",
+      "store_name": "Budget Market",
+      "city": "Warsaw",
+      "store_status": "open",
+      "product_id": "product-water",
+      "sku": "MOCK-DR-001",
+      "product_name": "Still water 1.5 l",
+      "brand": "Clear Spring",
+      "category": "drinks",
+      "unit_label": "1.5 l bottle",
+      "price_cents": 299,
+      "currency": "PLN",
+      "price": 2.99,
+      "price_display": "2.99 PLN",
+      "quantity": 120,
+      "inventory_status": "available",
+      "effective_status": "available",
+      "is_available": true,
+      "updated_at": "2026-07-11T10:00:00Z"
+    }
+  ],
+  "total": 54,
+  "limit": 100,
+  "offset": 0
+}
+```
+
+Dozwolone statusy efektywne to `available`, `low_stock`, `out_of_stock`,
+`discontinued` i `store_unavailable`. Zamknięty sklep wymusza
+`is_available: false`, nawet gdy jego lokalny stan magazynowy jest dodatni.
+Nieznane filtry identyfikatorów zwracają pustą listę z `200`; błędne enumy,
+zakresy lub paginacja zwracają `422`.
+
 ## Misje
 
 ### `POST /v1/missions/text`

@@ -13,9 +13,49 @@ uv run uvicorn app.main:app --reload --port 8001
 The database defaults to `apps/api/done.sqlite3`. Override it with
 `DONE_DB_PATH=/absolute/path/to/file.sqlite3`.
 
+## Mock store catalog
+
+`sql/mock_catalog.sql` contains an idempotent SQLite schema and mock data for
+stores, products, store-specific prices, inventory quantities, statuses and
+availability. Prices use integer minor units (`1299` means `12.99 PLN`). The API
+loads this catalog automatically when it initializes a database.
+
+Create a separate mock catalog database:
+
+```bash
+cd apps/api
+sqlite3 mock_catalog.sqlite3 < sql/mock_catalog.sql
+```
+
+Inspect products that can currently be purchased, ordered by price:
+
+```bash
+sqlite3 -header -column mock_catalog.sqlite3 \
+  "SELECT store_name, product_name, price_display, quantity, effective_status \
+   FROM catalog_availability \
+   WHERE is_available = 1 \
+   ORDER BY price_cents, product_name;"
+```
+
+The source tables are `catalog_stores`, `catalog_products` and
+`catalog_offers`. Query `catalog_availability` when you need the effective
+status: it also marks stocked products unavailable when their store is closed.
+
+The same data is available through `GET /v1/catalog/offers`. Filters compose
+with one another:
+
+```bash
+curl "http://localhost:8001/v1/catalog/offers?category=drinks&available=true&sort=price_asc"
+```
+
+Supported filters are `q`, `store_id`, `product_id`, `category`,
+`effective_status`, `available`, `min_price_cents`, `max_price_cents`, `sort`,
+`limit` and `offset`.
+
 Main endpoints:
 
 - `GET /health`
+- `GET /v1/catalog/offers`
 - `POST /v1/missions/text`
 - `POST /v1/missions/voice`
 - `GET /v1/missions`
