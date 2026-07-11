@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <radialGradient id="background" cx="50%" cy="42%" r="78%">
+      <stop offset="0" stop-color="#22234A"/>
+      <stop offset="0.55" stop-color="#0E1123"/>
+      <stop offset="1" stop-color="#070914"/>
+    </radialGradient>
+    <linearGradient id="mark" x1="205" y1="190" x2="835" y2="842" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#C691FF"/>
+      <stop offset="0.48" stop-color="#9B5CFF"/>
+      <stop offset="1" stop-color="#4B7BFF"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="28" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="1 0 0 0 0.55 0 0.55 0 0 0.25 0 0 1 0 0.95 0 0 0 0.58 0"/>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#background)"/>
+  <circle cx="512" cy="512" r="322" fill="none" stroke="#9B5CFF" stroke-width="74" opacity="0.28" filter="url(#glow)"/>
+  <path d="M707 239A322 322 0 1 0 830 493" fill="none" stroke="url(#mark)" stroke-width="72" stroke-linecap="round"/>
+  <path d="M326 506L458 640L765 332" fill="none" stroke="url(#mark)" stroke-width="86" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
