@@ -107,6 +107,29 @@ function sameMoney(left: number, right: number) {
   return Math.round(left * 100) === Math.round(right * 100);
 }
 
+function matchesSpokenIntent(command: MissionRealtimeCommand, transcript: string) {
+  const spoken = transcript.toLocaleLowerCase("pl-PL");
+  const cancel = /\b(anuluj\w*|odwoł\w*|rezygnuj\w*|cancel\w*|stop|nie kupuj)\b/u;
+  const human = /\b(człowiek\w*|konsultant\w*|operator\w*|pomoc\w*|support|human)\b/u;
+  const review = /\b(sprawdź\w*|przejrzyj\w*|pokaż\w*|koszyk\w*|review\w*|pause\w*|wstrzymaj\w*)\b/u;
+  const retry = /\b(spróbuj\w*|ponów\w*|retry|search again)\b/u;
+
+  if (command.name === "cancel_mission") return cancel.test(spoken);
+  if (command.name === "request_human") return human.test(spoken);
+  if (command.name === "reject_purchase") {
+    return command.choice === "cancel" ? cancel.test(spoken) : review.test(spoken);
+  }
+  if (command.name === "choose_recovery") {
+    if (command.choice === "answer_by_voice") return true;
+    if (command.choice === "cancel") return cancel.test(spoken);
+    if (command.choice === "request_human") return human.test(spoken);
+    if (command.choice === "review") return review.test(spoken);
+    if (command.choice.startsWith("retry")) return retry.test(spoken);
+    return false;
+  }
+  return true;
+}
+
 function statusOutput(detail: MissionDetail) {
   const pendingAction = detail.action_requests?.find((action) => action.status === "pending");
   const pendingApproval = detail.approval?.status === "pending" ? detail.approval : null;
@@ -191,9 +214,24 @@ export async function executeMissionRealtimeCommand(
     });
   }
 
+  if (!voiceEvidence) {
+    return reject(
+      "VOICE_EVIDENCE_REQUIRED",
+      "A fresh transcribed voice turn is required for this mission change.",
+    );
+  }
+  if (!matchesSpokenIntent(command, voiceEvidence)) {
+    return reject(
+      "VOICE_INTENT_MISMATCH",
+      "The requested action did not match the words in the current voice turn.",
+    );
+  }
+
   if (command.name === "correct_mission") {
     const detail = await api.correctMission(context.missionId, {
-      correction: command.correction,
+      // The model argument selects the command. Mission facts come only from
+      // the user's current microphone transcript.
+      correction: voiceEvidence,
       expected_revision: revision,
     });
     return success("mission_corrected", detail);
@@ -237,12 +275,6 @@ export async function executeMissionRealtimeCommand(
         "The spoken amount or currency does not match the current basket.",
       );
     }
-    if (!voiceEvidence) {
-      return reject(
-        "VOICE_EVIDENCE_REQUIRED",
-        "A transcribed spoken approval is required before the purchase can continue.",
-      );
-    }
     const detail = await api.resolveApproval(approval.id, "approve", {
       expected_revision: revision,
       amount: basket.total,
@@ -282,9 +314,6 @@ export async function executeMissionRealtimeCommand(
     if (!action.options.some((option) => option.id === command.choice)) {
       return reject("ACTION_CHOICE_NOT_ALLOWED", "That choice is not available for the current action.");
     }
-    if (command.choice === "answer_by_voice" && !voiceEvidence) {
-      return reject("VOICE_EVIDENCE_REQUIRED", "Please answer the clarification aloud before continuing.");
-    }
     const detail = await api.resolveActionRequest(action.id, {
       choice: command.choice,
       expected_revision: revision,
@@ -300,7 +329,7 @@ export async function executeMissionRealtimeCommand(
 
   if (command.name === "request_human") {
     const detail = await api.requestHumanSupport(context.missionId, {
-      reason: command.reason,
+      reason: voiceEvidence.slice(0, 500),
       expected_revision: revision,
     });
     return success("human_support_requested", detail);

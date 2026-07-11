@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useRouter } from "expo-router";
-import { Search, SlidersHorizontal, WifiOff } from "lucide-react-native";
+import { Search, SlidersHorizontal } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { AppScreen } from "@/components/AppScreen";
 import { CircleAction, PageHeader } from "@/components/PageHeader";
@@ -15,9 +15,7 @@ import { ScreenState } from "@/components/ScreenState";
 import { StatusPill } from "@/components/StatusPill";
 import { VoiceShortcut } from "@/components/VoiceShortcut";
 import { useCreateTextMission, useMissions, useUserProfile } from "@/api/hooks";
-import { demoFallbackEnabled } from "@/config/runtime";
-import { fallbackMissions } from "@/data/fallback";
-import type { MissionListFilters, MissionSummary } from "@/types/domain";
+import type { MissionListFilters } from "@/types/domain";
 import { colors, radii, spacing, type } from "@/theme/tokens";
 
 type ActionFilter = "all" | "required" | "working";
@@ -37,19 +35,6 @@ const sortOptions: Array<{ value: MissionSort; label: string }> = [
 ];
 
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : "Couldn’t load missions.";
-
-function localFallback(filters: MissionListFilters): MissionSummary[] {
-  let items = fallbackMissions.filter((mission) => !["completed", "cancelled", "failed"].includes(mission.status));
-  if (filters.q) {
-    const query = filters.q.toLowerCase();
-    items = items.filter((mission) => `${mission.title} ${mission.subtitle}`.toLowerCase().includes(query));
-  }
-  if (filters.requires_action === true) items = items.filter((mission) => mission.status === "approval_required");
-  if (filters.requires_action === false) items = items.filter((mission) => mission.status !== "approval_required");
-  if (filters.sort === "oldest") items = [...items].sort((a, b) => a.created_at.localeCompare(b.created_at));
-  else items = [...items].sort((a, b) => b.created_at.localeCompare(a.created_at));
-  return items;
-}
 
 export default function MissionsScreen() {
   const router = useRouter();
@@ -72,8 +57,7 @@ export default function MissionsScreen() {
     requires_action: actionFilter === "all" ? undefined : actionFilter === "required",
   };
   const query = useMissions(filters);
-  const usingFallback = demoFallbackEnabled && query.isError;
-  const missions = query.data?.items ?? (usingFallback ? localFallback(filters) : []);
+  const missions = query.data?.items ?? [];
   const primary = missions[0];
 
   const openFilters = () => {
@@ -112,13 +96,9 @@ export default function MissionsScreen() {
         action={<CircleAction label="Filter missions" onPress={openFilters}><SlidersHorizontal color={colors.primaryBright} size={23} /></CircleAction>}
       />
 
-      {usingFallback ? (
-        <View style={styles.previewBanner}><WifiOff size={15} color={colors.warning} /><Text style={styles.previewText}>Showing explicit demo fallback data.</Text></View>
-      ) : null}
-
       {query.isLoading ? <ScreenState loading title="Loading active missions…" /> : null}
-      {query.isError && !usingFallback ? <ScreenState title="Couldn’t load missions" message={errorMessage(query.error)} onRetry={() => void query.refetch()} /> : null}
-      {!query.isLoading && (!query.isError || usingFallback) && !missions.length ? (
+      {query.isError ? <ScreenState title="Couldn’t load missions" message={errorMessage(query.error)} onRetry={() => void query.refetch()} /> : null}
+      {!query.isLoading && !query.isError && !missions.length ? (
         <ScreenState title="No matching missions" message="Change the filters or add a new mission." />
       ) : null}
 
@@ -180,8 +160,6 @@ export default function MissionsScreen() {
 }
 
 const styles = StyleSheet.create({
-  previewBanner: { flexDirection: "row", alignItems: "center", gap: spacing.xs, padding: spacing.sm, marginBottom: spacing.md, borderRadius: radii.md, backgroundColor: "rgba(255,184,77,0.07)", borderWidth: 1, borderColor: "rgba(255,184,77,0.22)" },
-  previewText: { ...type.caption, color: colors.warning },
   expanded: { padding: spacing.md },
   heroRow: { flexDirection: "row", gap: spacing.md },
   heroContent: { flex: 1, minWidth: 0 },

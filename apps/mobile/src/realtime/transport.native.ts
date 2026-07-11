@@ -23,6 +23,25 @@ const eventSource = (value: unknown) => value as NativeEventSource;
 const OPENAI_REALTIME_CALLS_URL = "https://api.openai.com/v1/realtime/calls";
 const CONNECTION_TIMEOUT_MS = 20_000;
 
+function connectionError(error: unknown): Error {
+  const name = error && typeof error === "object" && "name" in error
+    ? String((error as { name?: unknown }).name)
+    : "";
+  const message = error instanceof Error ? error.message : "";
+  if (
+    name === "NotAllowedError"
+    || name === "SecurityError"
+    || /permission|not authorized/i.test(message)
+  ) {
+    return new Error("Microphone access is blocked. Allow microphone access in system settings and try again.");
+  }
+  if (name === "NotFoundError" || /no.*(microphone|audio device)/i.test(message)) {
+    return new Error("No microphone is available on this device.");
+  }
+  if (error instanceof Error && !["TypeError", "NetworkError"].includes(name)) return error;
+  return new Error("Live voice could not reach the voice service. Check your internet connection and try again.");
+}
+
 function waitForDataChannel(channel: NativeChannel): Promise<void> {
   if (channel.readyState === "open") return Promise.resolve();
   return new Promise((resolve, reject) => {
@@ -38,10 +57,35 @@ function waitForDataChannel(channel: NativeChannel): Promise<void> {
   });
 }
 
+function requestMicrophone(webrtc: NativeWebRTC): Promise<NativeStream> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      settled = true;
+      reject(new Error("Microphone permission timed out. Allow microphone access in system settings and try again."));
+    }, CONNECTION_TIMEOUT_MS);
+    webrtc.mediaDevices.getUserMedia({ audio: true, video: false }).then((stream) => {
+      clearTimeout(timer);
+      if (settled) {
+        for (const track of stream.getTracks()) track.stop();
+        return;
+      }
+      settled = true;
+      resolve(stream);
+    }, (error: unknown) => {
+      clearTimeout(timer);
+      if (settled) return;
+      settled = true;
+      reject(error);
+    });
+  });
+}
+
 class NativeRealtimeTransport implements RealtimeTransport {
   private peer: NativePeer | null = null;
   private channel: NativeChannel | null = null;
   private localStream: NativeStream | null = null;
+  private generation = 0;
 
   constructor(private readonly callbacks: RealtimeTransportCallbacks) {}
 
@@ -50,6 +94,7 @@ class NativeRealtimeTransport implements RealtimeTransport {
       throw new Error("Live voice requires the Done development or production build, not Expo Go.");
     }
     this.disconnect();
+    const generation = this.generation;
     this.callbacks.onStateChange("connecting");
     try {
       const webrtc = await import("react-native-webrtc");
@@ -64,10 +109,11 @@ class NativeRealtimeTransport implements RealtimeTransport {
 
       // Native WebRTC routes remote audio tracks through the platform audio session.
       eventSource(peer).addEventListener("track", () => undefined);
-      const stream = await webrtc.mediaDevices.getUserMedia({
-        audio: true,
-        video: false,
-      });
+      const stream = await requestMicrophone(webrtc);
+      if (generation !== this.generation) {
+        for (const track of stream.getTracks()) track.stop();
+        throw new Error("Live voice connection was closed.");
+      }
       this.localStream = stream;
       for (const track of stream.getAudioTracks()) peer.addTrack(track, stream);
 
@@ -103,7 +149,7 @@ class NativeRealtimeTransport implements RealtimeTransport {
     } catch (error) {
       this.disconnect();
       this.callbacks.onStateChange("failed");
-      const safeError = error instanceof Error ? error : new Error("Live voice could not start.");
+      const safeError = connectionError(error);
       this.callbacks.onError(safeError);
       throw safeError;
     }
@@ -115,6 +161,7 @@ class NativeRealtimeTransport implements RealtimeTransport {
   }
 
   disconnect(): void {
+    this.generation += 1;
     this.channel?.close();
     this.channel = null;
     for (const track of this.localStream?.getTracks() ?? []) track.stop();

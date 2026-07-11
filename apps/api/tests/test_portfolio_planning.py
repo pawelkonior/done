@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -15,7 +16,11 @@ from app.domain.portfolio.model import (
     PriceSignal,
 )
 from app.domain.portfolio.policies import TimingGate
+<<<<<<< HEAD
 from app.main import create_app
+=======
+from app.domain.mission.catalog import CatalogPlanningAgent, PlannedCatalogLine
+>>>>>>> codex/full-real-app-audit
 
 
 def _create(client: TestClient, transcript: str) -> dict:
@@ -73,10 +78,19 @@ def test_created_mission_contains_a_persisted_portfolio_decision(
     assert created["mission"]["status"] == "approval_required"
     assert decision["status"] == "feasible"
     assert decision["selected_merchant_id"] == "merchant-b"
-    assert len(decision["actions"]) == 10
+    # The transcript says ten children (count), not ten-year-olds (age), so
+    # candles must not be inferred as a purchase need.
+    assert len(decision["actions"]) == 9
+    assert all(action["need_id"] != "candles" for action in decision["actions"])
     assert all(action["action"] == "buy_now" for action in decision["actions"])
     assert all(action["lptb"] for action in decision["actions"])
     assert all(action["quantity"] > 0 for action in decision["actions"])
+    assert sorted(
+        (action["product_id"], action["quantity"]) for action in decision["actions"]
+    ) == sorted(
+        (item["product_id"], item["quantity"])
+        for item in created["basket"]["items"]
+    )
     assert created["approval"]["decision_id"] == decision["id"]
 
 
@@ -245,6 +259,7 @@ def test_contract_owns_needs_and_revises_them_with_participant_count(
     created = _create(client, transcript)
     mission_id = created["mission"]["id"]
     initial_needs = {need["id"]: need["quantity"] for need in created["contract"]["needs"]}
+    assert "candles" not in initial_needs
     assert initial_needs["snacks"] == 3
     assert initial_needs["drinks_juice"] == 4
     assert initial_needs["drinks_water"] == 3
@@ -266,6 +281,7 @@ def test_contract_owns_needs_and_revises_them_with_participant_count(
     assert detail["approval"]["decision_id"] == detail["portfolio_decision"]["id"]
 
 
+<<<<<<< HEAD
 def test_shadow_mode_records_comparison_without_touching_checkout_state(
     tmp_path: Path, transcript: str
 ) -> None:
@@ -351,3 +367,91 @@ def test_shadow_mode_and_autonomy_are_disabled_by_default(
     assert capabilities["autonomy_enabled"] is False
     assert capabilities["automatic_purchases_default"] is False
     assert capabilities["promotion_gate"]["requires_manual_approval"] is True
+=======
+def test_gift_checkout_never_references_a_party_portfolio_decision(
+    client: TestClient,
+) -> None:
+    created = _create(
+        client,
+        "Buy gifts for five kids aged ten, in a week at 4:30 pm, budget 500 PLN",
+    )
+
+    assert created["mission"]["status"] == "approval_required"
+    assert created["contract"]["needs"] == []
+    assert created["portfolio_decision"] is None
+    assert created["approval"]["decision_id"] is None
+    assert sum(item["quantity"] for item in created["basket"]["items"]) == 5
+    assert {
+        item["category"] for item in created["basket"]["items"]
+    }.issubset({"toys", "books", "games", "creative"})
+
+    replan = client.post(
+        f"/v1/missions/{created['mission']['id']}/replan",
+        json={"expected_revision": created["mission"]["revision"]},
+    )
+    assert replan.status_code == 409
+    assert "not available for gift missions" in replan.json()["message"]
+
+    unchanged = client.get(f"/v1/missions/{created['mission']['id']}").json()
+    assert unchanged["approval"]["id"] == created["approval"]["id"]
+    assert unchanged["basket"]["id"] == created["basket"]["id"]
+
+
+def test_explicit_recipient_age_keeps_catalog_and_portfolio_candles_aligned(
+    client: TestClient,
+) -> None:
+    created = _create(
+        client,
+        "Za tydzień przyjęcie dla 5 20-latków. Kup dekoracje, tort, napoje "
+        "i przekąski do 1000 PLN, dostawa do 18:00.",
+    )
+
+    assert created["mission"]["status"] == "approval_required"
+    candle_need = next(
+        need for need in created["contract"]["needs"] if need["id"] == "candles"
+    )
+    candle_item = next(
+        item for item in created["basket"]["items"] if item["category"] == "candles"
+    )
+    candle_action = next(
+        action
+        for action in created["portfolio_decision"]["actions"]
+        if action["need_id"] == "candles"
+    )
+    assert candle_need["quantity"] == 2
+    assert candle_item["quantity"] == 2
+    assert candle_action["quantity"] == 2
+
+
+def test_disagreeing_planners_stop_before_approval_and_funding(
+    client: TestClient,
+    transcript: str,
+    monkeypatch,
+) -> None:
+    original_plan = CatalogPlanningAgent.plan
+
+    def divergent_plan(agent, request, offers):
+        plan = original_plan(agent, request, offers)
+        lines = tuple(
+            PlannedCatalogLine("snack-crackers", line.quantity)
+            if line.product_id == "snack-pretzels"
+            else line
+            for line in plan.lines
+        )
+        return replace(plan, lines=lines)
+
+    monkeypatch.setattr(CatalogPlanningAgent, "plan", divergent_plan)
+
+    created = _create(client, transcript)
+
+    assert created["mission"]["status"] == "waiting_for_support"
+    assert created["basket"] is None
+    assert created["approval"] is None
+    assert created["funding"]["status"] == "not_ready"
+    action = next(
+        item
+        for item in created["action_requests"]
+        if item["reason_code"] == "PLANNERS_DISAGREE"
+    )
+    assert action["owner"] == "support"
+>>>>>>> codex/full-real-app-audit

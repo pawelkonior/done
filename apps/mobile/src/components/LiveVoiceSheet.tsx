@@ -9,7 +9,7 @@ import {
   Text,
   View,
 } from "react-native";
-import { AudioLines, Check, Keyboard, Mic2, RefreshCw, Sparkles, X } from "lucide-react-native";
+import { AudioLines, Check, RefreshCw, Sparkles, X } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { getRealtimeClientSecret } from "@/api/client";
 import type { CreateMissionResponse, MissionDetail } from "@/types/domain";
@@ -79,7 +79,6 @@ export function LiveVoiceSheet({
   visible,
   language,
   onClose,
-  onUseText,
   onSubmitTranscript,
   onMissionCreated,
   missionId: activeMissionId,
@@ -89,7 +88,6 @@ export function LiveVoiceSheet({
   visible: boolean;
   language: string;
   onClose: () => void;
-  onUseText: () => void;
   onSubmitTranscript?: (transcript: string) => Promise<CreateMissionResponse>;
   onMissionCreated?: (missionId: string) => void;
   missionId?: string;
@@ -115,7 +113,12 @@ export function LiveVoiceSheet({
   const handledCallsRef = useRef(new Set<string>());
   const latestTurnTranscriptRef = useRef("");
   const currentVoiceItemIdRef = useRef<string | null>(null);
+  const consumedVoiceItemIdsRef = useRef(new Set<string>());
   const voiceEvidenceWaitersRef = useRef(new Set<(transcript?: string) => void>());
+  const pendingSessionRefreshRef = useRef(false);
+  const sessionRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingMissionHandoffRef = useRef<string | null>(null);
+  const missionHandoffTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const transcriptBufferRef = useRef(new RealtimeTranscriptBuffer());
   const transcriptScrollRef = useRef<ScrollView | null>(null);
 
@@ -143,6 +146,7 @@ export function LiveVoiceSheet({
   const waitForCurrentVoiceEvidence = useCallback(() => {
     const current = latestTurnTranscriptRef.current.trim();
     if (current.length >= 3) return Promise.resolve(current);
+    if (!currentVoiceItemIdRef.current) return Promise.resolve(undefined);
     return new Promise<string | undefined>((resolve) => {
       let settled = false;
       const complete = (transcript?: string) => {
@@ -187,6 +191,32 @@ export function LiveVoiceSheet({
     }
   }, []);
 
+  const finishMissionHandoff = useCallback(() => {
+    const missionId = pendingMissionHandoffRef.current;
+    if (!missionId) return;
+    pendingMissionHandoffRef.current = null;
+    if (missionHandoffTimerRef.current) clearTimeout(missionHandoffTimerRef.current);
+    missionHandoffTimerRef.current = null;
+    onMissionCreatedRef.current?.(missionId);
+  }, []);
+
+  const refreshMissionSession = useCallback(() => {
+    if (!pendingSessionRefreshRef.current) return;
+    pendingSessionRefreshRef.current = false;
+    if (sessionRefreshTimerRef.current) clearTimeout(sessionRefreshTimerRef.current);
+    sessionRefreshTimerRef.current = null;
+    transportRef.current?.disconnect();
+    setRetryKey((value) => value + 1);
+  }, []);
+
+  const scheduleMissionSessionRefresh = useCallback(() => {
+    pendingSessionRefreshRef.current = true;
+    if (sessionRefreshTimerRef.current) clearTimeout(sessionRefreshTimerRef.current);
+    // response.done normally refreshes immediately after the spoken tool
+    // result. The timer is a fail-safe if the provider never emits it.
+    sessionRefreshTimerRef.current = setTimeout(refreshMissionSession, 8_000);
+  }, [refreshMissionSession]);
+
   const submitMission = useCallback(async (missionTranscript: string, callId?: string) => {
     const normalized = missionTranscript.trim();
     if (normalized.length < 3 || submittingRef.current) return;
@@ -211,8 +241,12 @@ export function LiveVoiceSheet({
       setStatus("complete");
       if (callId) {
         replyToTool(callId, { ok: true, mission_id: result.mission_id, status: result.status }, true);
+        pendingMissionHandoffRef.current = result.mission_id;
+        if (missionHandoffTimerRef.current) clearTimeout(missionHandoffTimerRef.current);
+        missionHandoffTimerRef.current = setTimeout(finishMissionHandoff, 8_000);
+      } else {
+        onMissionCreatedRef.current?.(result.mission_id);
       }
-      onMissionCreatedRef.current?.(result.mission_id);
     } catch (submitError) {
       const safeMessage = submitError instanceof MissionCommandRejected
         ? submitError.message
@@ -231,7 +265,7 @@ export function LiveVoiceSheet({
     } finally {
       submittingRef.current = false;
     }
-  }, [activeMissionId, replyToTool]);
+  }, [activeMissionId, finishMissionHandoff, replyToTool]);
 
   const runMissionCommand = useCallback(async (
     command: Exclude<RealtimeCommand, { name: "submit_mission" }>,
@@ -263,11 +297,22 @@ export function LiveVoiceSheet({
     setStatus("submitting");
     setError(null);
     try {
-      const needsCurrentVoiceEvidence = command.name === "approve_purchase"
-        || (command.name === "choose_recovery" && command.choice === "answer_by_voice");
+      const needsCurrentVoiceEvidence = !["get_status", "confirm_contract"].includes(command.name);
+      const evidenceItemId = currentVoiceItemIdRef.current;
       const voiceTranscript = needsCurrentVoiceEvidence
         ? await waitForCurrentVoiceEvidence()
         : latestTurnTranscriptRef.current;
+      if (needsCurrentVoiceEvidence) {
+        if (evidenceItemId) consumedVoiceItemIdsRef.current.add(evidenceItemId);
+        latestTurnTranscriptRef.current = "";
+        currentVoiceItemIdRef.current = null;
+      }
+      if (needsCurrentVoiceEvidence && !voiceTranscript) {
+        throw new MissionCommandRejected(
+          "VOICE_EVIDENCE_REQUIRED",
+          "Please say that command again so I can verify the current voice turn.",
+        );
+      }
       const result = await executeMissionRealtimeCommand(command, {
         missionId: activeMissionId,
         voiceTranscript,
@@ -280,6 +325,9 @@ export function LiveVoiceSheet({
         // The next query refresh will reconcile the UI even if a consumer callback fails.
       }
       replyToTool(command.callId, result.output, true);
+      if (!["completed", "cancelled", "failed"].includes(result.detail.mission.status)) {
+        scheduleMissionSessionRefresh();
+      }
     } catch (commandError) {
       const safeMessage = commandError instanceof MissionCommandRejected
         ? commandError.message
@@ -301,9 +349,12 @@ export function LiveVoiceSheet({
     } finally {
       submittingRef.current = false;
     }
-  }, [activeMissionId, replyToTool, waitForCurrentVoiceEvidence]);
+  }, [activeMissionId, replyToTool, scheduleMissionSessionRefresh, waitForCurrentVoiceEvidence]);
 
   const handleEvent = useCallback((event: unknown) => {
+    const eventType = event && typeof event === "object" && "type" in event
+      ? (event as { type?: unknown }).type
+      : undefined;
     const serverError = realtimeServerError(event);
     if (serverError) {
       setError(serverError);
@@ -317,6 +368,7 @@ export function LiveVoiceSheet({
       if (
         transcriptEvent.kind === "completed"
         && currentVoiceItemIdRef.current === transcriptEvent.itemId
+        && !consumedVoiceItemIdsRef.current.has(transcriptEvent.itemId)
       ) {
         latestTurnTranscriptRef.current = transcriptEvent.transcript;
         for (const complete of voiceEvidenceWaitersRef.current) {
@@ -331,9 +383,6 @@ export function LiveVoiceSheet({
     const orderEvent = parseTranscriptOrderEvent(event);
     if (orderEvent) {
       transcriptBufferRef.current.register(orderEvent);
-      const eventType = event && typeof event === "object" && "type" in event
-        ? (event as { type?: unknown }).type
-        : undefined;
       if (eventType === "input_audio_buffer.committed") {
         currentVoiceItemIdRef.current = orderEvent.itemId;
       }
@@ -349,12 +398,42 @@ export function LiveVoiceSheet({
 
     const command = parseRealtimeCommand(event);
     if (command?.name === "submit_mission") {
-      void submitMission(command.transcript, command.callId);
+      void (async () => {
+        // Input transcription can complete after response.done. Wait for the
+        // committed microphone turn instead of trusting the model argument or
+        // rejecting a valid utterance because of event ordering.
+        const currentTurn = await waitForCurrentVoiceEvidence();
+        if (handledCallsRef.current.has(command.callId)) return;
+        const capturedTranscript = transcriptBufferRef.current.finalText().trim();
+        if (!currentTurn || capturedTranscript.length < 3) {
+          handledCallsRef.current.add(command.callId);
+          const message = "I couldn’t verify a spoken transcript. Please say the mission again.";
+          setStatus("ready");
+          setInputStatus("error");
+          setTranscriptError(message);
+          replyToTool(command.callId, {
+            ok: false,
+            error: { code: "VOICE_TRANSCRIPT_UNAVAILABLE", message },
+          }, false);
+          return;
+        }
+        // The mission API receives only verbatim speech transcription. The
+        // model-generated tool argument is a control signal, never source data.
+        await submitMission(capturedTranscript, command.callId);
+      })();
       return;
     }
     if (command) {
       void runMissionCommand(command);
       return;
+    }
+
+    if (eventType === "response.done") {
+      if (pendingMissionHandoffRef.current) {
+        setTimeout(finishMissionHandoff, 250);
+      } else if (pendingSessionRefreshRef.current) {
+        setTimeout(refreshMissionSession, 250);
+      }
     }
 
     const activity = realtimeActivity(event);
@@ -369,7 +448,7 @@ export function LiveVoiceSheet({
         setTranscriptError(null);
       }
     }
-  }, [rebuildTranscript, runMissionCommand, submitMission]);
+  }, [finishMissionHandoff, rebuildTranscript, refreshMissionSession, replyToTool, runMissionCommand, submitMission, waitForCurrentVoiceEvidence]);
 
   useEffect(() => {
     if (!visible) return;
@@ -382,8 +461,11 @@ export function LiveVoiceSheet({
     setTranscriptError(null);
     setCreatedMissionId(null);
     createdMissionIdRef.current = null;
+    pendingMissionHandoffRef.current = null;
+    pendingSessionRefreshRef.current = false;
     latestTurnTranscriptRef.current = "";
     currentVoiceItemIdRef.current = null;
+    consumedVoiceItemIdsRef.current.clear();
     for (const complete of voiceEvidenceWaitersRef.current) complete(undefined);
     submittingRef.current = false;
     handledCallsRef.current.clear();
@@ -441,6 +523,12 @@ export function LiveVoiceSheet({
     return () => {
       generationRef.current += 1;
       for (const complete of voiceEvidenceWaitersRef.current) complete(undefined);
+      if (sessionRefreshTimerRef.current) clearTimeout(sessionRefreshTimerRef.current);
+      sessionRefreshTimerRef.current = null;
+      if (missionHandoffTimerRef.current) clearTimeout(missionHandoffTimerRef.current);
+      missionHandoffTimerRef.current = null;
+      pendingMissionHandoffRef.current = null;
+      pendingSessionRefreshRef.current = false;
       transport.disconnect();
       if (transportRef.current === transport) transportRef.current = null;
     };
@@ -534,18 +622,6 @@ export function LiveVoiceSheet({
                 </LinearGradient>
               </Pressable>
             ) : null}
-            {!createdMissionId ? (
-              <View style={styles.fallbackRow}>
-                <Pressable onPress={close} style={({ pressed }) => [styles.fallbackButton, pressed && styles.pressed]}>
-                  <Mic2 size={16} color={colors.textSecondary} />
-                  <Text style={styles.fallbackText}>{activeMissionId ? "Close" : "Record instead"}</Text>
-                </Pressable>
-                <Pressable onPress={() => { close(); onUseText(); }} style={({ pressed }) => [styles.fallbackButton, pressed && styles.pressed]}>
-                  <Keyboard size={16} color={colors.textSecondary} />
-                  <Text style={styles.fallbackText}>Type instead</Text>
-                </Pressable>
-              </View>
-            ) : null}
           </View>
         </View>
       </View>
@@ -594,8 +670,5 @@ const styles = StyleSheet.create({
   primaryText: { ...type.bodyMedium, color: colors.text },
   secondaryButton: { minHeight: 50, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.xs, borderRadius: radii.md, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: "rgba(155,92,255,0.08)" },
   secondaryText: { ...type.smallMedium, color: colors.primaryBright },
-  fallbackRow: { flexDirection: "row", gap: spacing.sm },
-  fallbackButton: { minHeight: 44, flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderRadius: radii.md, borderWidth: 1, borderColor: colors.hairline },
-  fallbackText: { ...type.caption, color: colors.textSecondary },
   pressed: { opacity: 0.7 },
 });

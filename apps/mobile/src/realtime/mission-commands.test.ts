@@ -163,7 +163,10 @@ describe("mission Realtime command execution", () => {
       merchantId: "merchant-b",
     };
 
-    await expect(executeMissionRealtimeCommand(command, { missionId: "mission-1" }, api))
+    await expect(executeMissionRealtimeCommand(command, {
+      missionId: "mission-1",
+      voiceTranscript: "Zatwierdzam ten zakup.",
+    }, api))
       .rejects.toMatchObject({ code: "APPROVAL_BINDING_UNAVAILABLE" });
 
     const boundApi = commandApi();
@@ -216,20 +219,29 @@ describe("mission Realtime command execution", () => {
       missionId: "mission-1",
       revision: 4,
       correction: "Zmień budżet na 450 PLN.",
-    }, { missionId: "mission-1" }, api);
+    }, {
+      missionId: "mission-1",
+      voiceTranscript: "Zmień budżet na 450 PLN.",
+    }, api);
     await executeMissionRealtimeCommand({
       name: "cancel_mission",
       callId: "call-cancel",
       missionId: "mission-1",
       revision: 4,
-    }, { missionId: "mission-1" }, api);
+    }, {
+      missionId: "mission-1",
+      voiceTranscript: "Anuluj tę misję.",
+    }, api);
     await executeMissionRealtimeCommand({
       name: "request_human",
       callId: "call-human",
       missionId: "mission-1",
       revision: 4,
       reason: "Potrzebuję pomocy z zamiennikiem.",
-    }, { missionId: "mission-1" }, api);
+    }, {
+      missionId: "mission-1",
+      voiceTranscript: "Potrzebuję pomocy człowieka z zamiennikiem.",
+    }, api);
 
     expect(api.correctMission).toHaveBeenCalledWith("mission-1", {
       correction: "Zmień budżet na 450 PLN.",
@@ -237,8 +249,39 @@ describe("mission Realtime command execution", () => {
     });
     expect(api.cancelMission).toHaveBeenCalledWith("mission-1", 4);
     expect(api.requestHumanSupport).toHaveBeenCalledWith("mission-1", {
-      reason: "Potrzebuję pomocy z zamiennikiem.",
+      reason: "Potrzebuję pomocy człowieka z zamiennikiem.",
       expected_revision: 4,
     });
+  });
+
+  it("rejects every state-changing Realtime command without a fresh voice turn", async () => {
+    const api = commandApi();
+
+    await expect(executeMissionRealtimeCommand({
+      name: "cancel_mission",
+      callId: "call-cancel",
+      missionId: "mission-1",
+      revision: 4,
+    }, { missionId: "mission-1" }, api)).rejects.toMatchObject({
+      code: "VOICE_EVIDENCE_REQUIRED",
+    });
+
+    expect(api.cancelMission).not.toHaveBeenCalled();
+  });
+
+  it("rejects a destructive model tool call when the spoken intent does not match", async () => {
+    const api = commandApi();
+
+    await expect(executeMissionRealtimeCommand({
+      name: "cancel_mission",
+      callId: "call-hallucinated-cancel",
+      missionId: "mission-1",
+      revision: 4,
+    }, {
+      missionId: "mission-1",
+      voiceTranscript: "Jaki jest aktualny status misji?",
+    }, api)).rejects.toMatchObject({ code: "VOICE_INTENT_MISMATCH" });
+
+    expect(api.cancelMission).not.toHaveBeenCalled();
   });
 });

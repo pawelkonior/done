@@ -113,7 +113,6 @@ describe("LiveVoiceSheet mission commands", () => {
         language="pl-PL"
         missionId="mission-1"
         onClose={jest.fn()}
-        onUseText={jest.fn()}
         onMissionUpdated={onMissionUpdated}
       />,
     );
@@ -167,6 +166,11 @@ describe("LiveVoiceSheet mission commands", () => {
         output: JSON.stringify({ ok: true, action: "purchase_approval_recorded", status: "executing" }),
       },
     });
+    await act(async () => {
+      mockCallbacks.onEvent({ type: "response.done", response: { output: [] } });
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+    await waitFor(() => expect(getRealtimeClientSecret).toHaveBeenCalledTimes(2));
     await screen.unmount();
   });
 
@@ -181,7 +185,6 @@ describe("LiveVoiceSheet mission commands", () => {
         language="pl-PL"
         missionId="mission-1"
         onClose={jest.fn()}
-        onUseText={jest.fn()}
       />,
     );
     await waitFor(() => expect(getRealtimeClientSecret).toHaveBeenCalled());
@@ -234,6 +237,27 @@ describe("LiveVoiceSheet mission commands", () => {
         voiceTranscript: "Tak, zatwierdzam dokładnie ten zakup.",
       },
     ));
+
+    await act(async () => {
+      mockCallbacks.onEvent(responseDone("approve_purchase", {
+        mission_id: "mission-1",
+        approval_id: "approval-9",
+        revision: 4,
+        amount: 499.99,
+        currency: "PLN",
+        plan_hash: PLAN_HASH,
+        merchant_id: "merchant-b",
+      }, "call-replayed-turn"));
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(mockSend).toHaveBeenCalledWith(expect.objectContaining({
+      type: "conversation.item.create",
+      item: expect.objectContaining({
+        call_id: "call-replayed-turn",
+        output: expect.stringContaining("VOICE_EVIDENCE_REQUIRED"),
+      }),
+    })));
+    expect(executeMissionRealtimeCommand).toHaveBeenCalledTimes(1);
     await screen.unmount();
   });
 
@@ -248,7 +272,6 @@ describe("LiveVoiceSheet mission commands", () => {
         visible
         language="pl-PL"
         onClose={jest.fn()}
-        onUseText={jest.fn()}
         onSubmitTranscript={onSubmitTranscript}
         onMissionCreated={onMissionCreated}
       />,
@@ -256,17 +279,33 @@ describe("LiveVoiceSheet mission commands", () => {
 
     await waitFor(() => expect(getRealtimeClientSecret).toHaveBeenCalledWith("pl-PL", undefined));
     await act(async () => {
+      mockCallbacks.onEvent({
+        type: "input_audio_buffer.committed",
+        item_id: "item-intake",
+        previous_item_id: null,
+      });
       mockCallbacks.onEvent(responseDone("submit_mission", {
-        transcript: "Prezenty dla pięciu dziesięciolatków do 500 PLN.",
+        transcript: "Zmyślony tekst modelu, którego nie wolno wysłać.",
       }, "call-submit"));
+      await Promise.resolve();
+    });
+    expect(onSubmitTranscript).not.toHaveBeenCalled();
+
+    await act(async () => {
+      mockCallbacks.onEvent({
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "item-intake",
+        content_index: 0,
+        transcript: "Chcę kupić prezenty dla pięciu dziesięciolatków do 500 PLN.",
+      });
       await Promise.resolve();
     });
 
     await waitFor(() => expect(onSubmitTranscript).toHaveBeenCalledWith(
-      "Prezenty dla pięciu dziesięciolatków do 500 PLN.",
+      "Chcę kupić prezenty dla pięciu dziesięciolatków do 500 PLN.",
     ));
     expect(executeMissionRealtimeCommand).not.toHaveBeenCalled();
-    expect(onMissionCreated).toHaveBeenCalledWith("mission-new");
+    expect(onMissionCreated).not.toHaveBeenCalled();
     expect(mockSend).toHaveBeenCalledWith({
       type: "conversation.item.create",
       item: {
@@ -279,6 +318,41 @@ describe("LiveVoiceSheet mission commands", () => {
         }),
       },
     });
+    await act(async () => {
+      mockCallbacks.onEvent({ type: "response.done", response: { output: [] } });
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+    expect(onMissionCreated).toHaveBeenCalledWith("mission-new");
+    await screen.unmount();
+  });
+
+  it("refuses mission creation when a tool call has no verified microphone transcript", async () => {
+    const onSubmitTranscript = jest.fn();
+    const screen = await render(
+      <LiveVoiceSheet
+        visible
+        language="pl-PL"
+        onClose={jest.fn()}
+        onSubmitTranscript={onSubmitTranscript}
+      />,
+    );
+    await waitFor(() => expect(getRealtimeClientSecret).toHaveBeenCalled());
+
+    await act(async () => {
+      mockCallbacks.onEvent(responseDone("submit_mission", {
+        transcript: "Treść istnieje wyłącznie w argumencie wygenerowanym przez model.",
+      }, "call-without-voice"));
+      await Promise.resolve();
+    });
+
+    expect(onSubmitTranscript).not.toHaveBeenCalled();
+    expect(mockSend).toHaveBeenCalledWith(expect.objectContaining({
+      type: "conversation.item.create",
+      item: expect.objectContaining({
+        call_id: "call-without-voice",
+        output: expect.stringContaining("VOICE_TRANSCRIPT_UNAVAILABLE"),
+      }),
+    }));
     await screen.unmount();
   });
 });

@@ -43,7 +43,7 @@ Wymagania: Node 20+, Python 3.13 oraz `uv`.
 
 ```bash
 cp .env.example .env
-# wpisz OPENAI_API_KEY wyłącznie w lokalnym .env, jeżeli używasz Realtime lub transkrypcji audio
+# wpisz OPENAI_API_KEY wyłącznie w lokalnym .env; jest wymagany dla rozmowy Realtime i transkrypcji audio
 npm run setup
 npm run dev
 ```
@@ -54,20 +54,46 @@ Po uruchomieniu:
 - API: [http://localhost:8001](http://localhost:8001)
 - dokumentacja API: [http://localhost:8001/docs](http://localhost:8001/docs)
 
+### Uruchomienie na fizycznym telefonie
+
+WebRTC wymaga development buildu Done — Expo Go nie zawiera natywnego modułu
+`react-native-webrtc`. Telefon i komputer muszą być w tej samej sieci Wi-Fi.
+
+```bash
+# terminal 1: API jest wystawione w sieci lokalnej na porcie 8001
+npm run api
+
+# terminal 2: Metro pokazuje kod QR dla development buildu
+npm run mobile
+```
+
+Jednorazowo zbuduj i zainstaluj aplikację na podłączonym urządzeniu:
+
+```bash
+cd apps/mobile
+npx expo run:ios --device
+# albo
+npx expo run:android --device
+```
+
+W trybie developerskim aplikacja odczytuje adres hosta z Metro i łączy się z
+`http://<adres-komputera>:8001`. W innym środowisku ustaw jawnie
+`EXPO_PUBLIC_API_URL`; klucz `OPENAI_API_KEY` pozostaje wyłącznie na backendzie.
+
 Jeśli port 8001 jest zajęty, uruchom API na innym porcie i przekaż adres aplikacji:
 
 ```bash
 cd apps/api
-uv run uvicorn app.main:app --reload --port 8010
-EXPO_PUBLIC_API_URL=http://localhost:8010 npm run web
+uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8010
+EXPO_PUBLIC_API_URL=http://<adres-komputera>:8010 npm run mobile
 ```
 
 ## Scenariusz demo
 
-1. Na ekranie `Now` dotknij voice orb, aby rozpocząć sesję OpenAI Realtime; przytrzymaj go, aby nagrać komendę wysyłaną przez API do OpenAI Transcription, albo wybierz formularz tekstowy.
+1. Na ekranie `Now` dotknij voice orb, aby rozpocząć sesję OpenAI Realtime; możesz też przytrzymać go, aby nagrać komendę wysyłaną przez API do OpenAI Transcription.
 2. Powiedz np. „Rzeczy na urodziny 10-latków, 5 osób, za tydzień, maksymalnie 500 zł”. Live dopyta, czy chodzi o prezenty czy wyposażenie przyjęcia, oraz o godzinę dostawy.
 3. Na ekranie szczegółów sprawdź kontrakt, dostawę i koszyk.
-4. Wybierz „Approve purchase”.
+4. Otwórz zatwierdzenie głosowe i potwierdź odczytaną kwotę, walutę oraz merchanta.
 5. W trybie demonstracyjnym można włączyć brak produktu. Done dobierze zgodny zamiennik, ale ponieważ plan się zmienił, poprosi głosowo o świeżą akceptację przed jakimkolwiek fundingiem.
 6. Ekran końcowy pokaże naprawy, próby płatności, oszczędność względem budżetu i pełny event log. Jeśli bezpieczna naprawa nie istnieje, pokaże pytanie lub kolejkę wsparcia zamiast udawać sukces.
 
@@ -79,12 +105,12 @@ npm run build:web
 npm run doctor
 ```
 
-Natywny development build z WebRTC (Expo Go nie zawiera tego modułu):
+Natywny development build z WebRTC:
 
 ```bash
 cd apps/mobile
 npx expo prebuild --platform ios
-npx expo run:ios
+npx expo run:ios --device
 ```
 
 Sam backend można uruchomić także przez Docker:

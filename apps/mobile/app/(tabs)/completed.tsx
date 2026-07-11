@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useRouter } from "expo-router";
-import { CalendarDays, Check, Leaf, PartyPopper, WifiOff } from "lucide-react-native";
+import { CalendarDays, Check, Leaf, PartyPopper } from "lucide-react-native";
 import { StyleSheet, Text, View } from "react-native";
 import { AppScreen } from "@/components/AppScreen";
 import { GlassCard } from "@/components/GlassCard";
@@ -9,9 +9,7 @@ import { CircleAction, PageHeader } from "@/components/PageHeader";
 import { ChoiceRow, PreferenceModal } from "@/components/PreferenceModal";
 import { ScreenState } from "@/components/ScreenState";
 import { useMissionDetails, useMissions } from "@/api/hooks";
-import { demoFallbackEnabled } from "@/config/runtime";
-import { fallbackMissions, getFallbackDetail } from "@/data/fallback";
-import type { MissionDetail, MissionSummary } from "@/types/domain";
+import type { MissionDetail } from "@/types/domain";
 import { colors, radii, spacing, type } from "@/theme/tokens";
 
 type CompletedRange = "today" | "yesterday" | "week";
@@ -41,14 +39,6 @@ function rangeDates(range: CompletedRange) {
   return { from: localDate(start), to: localDate(end) };
 }
 
-function localFallback(from: string, to: string): MissionSummary[] {
-  return fallbackMissions.filter((mission) => {
-    if (mission.status !== "completed" || !mission.completed_at) return false;
-    const completed = localDate(new Date(mission.completed_at));
-    return completed >= from && completed <= to;
-  });
-}
-
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : "Couldn’t load completed missions.";
 
 export default function CompletedScreen() {
@@ -57,13 +47,10 @@ export default function CompletedScreen() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const dates = rangeDates(range);
   const query = useMissions({ status: "completed", completed_from: dates.from, completed_to: dates.to, sort: "newest" });
-  const usingFallback = demoFallbackEnabled && query.isError;
-  const completed = query.data?.items ?? (usingFallback ? localFallback(dates.from, dates.to) : []);
-  const detailQueries = useMissionDetails(usingFallback ? [] : completed.map((mission) => mission.id));
-  const details = usingFallback
-    ? completed.map((mission) => getFallbackDetail(mission.id))
-    : detailQueries.map((detail) => detail.data).filter((detail): detail is MissionDetail => Boolean(detail));
-  const detailsLoading = !usingFallback && detailQueries.some((detail) => detail.isLoading);
+  const completed = query.data?.items ?? [];
+  const detailQueries = useMissionDetails(completed.map((mission) => mission.id));
+  const details = detailQueries.map((detail) => detail.data).filter((detail): detail is MissionDetail => Boolean(detail));
+  const detailsLoading = detailQueries.some((detail) => detail.isLoading);
   const saved = details.reduce((sum, detail) => sum + (detail.metrics.saved ?? 0), 0);
   const recovered = completed.reduce((sum, mission) => sum + (mission.recovered_failures ?? 0), 0);
   const currency = details[0]?.basket?.currency ?? details[0]?.contract?.currency ?? "PLN";
@@ -77,11 +64,10 @@ export default function CompletedScreen() {
         action={<CircleAction label="Select date" onPress={() => setPickerOpen(true)}><CalendarDays color={colors.primaryBright} size={23} /></CircleAction>}
       />
 
-      {usingFallback ? <View style={styles.previewBanner}><WifiOff size={15} color={colors.warning} /><Text style={styles.previewText}>Showing explicit demo fallback data.</Text></View> : null}
       {query.isLoading ? <ScreenState loading title="Loading completed missions…" /> : null}
-      {query.isError && !usingFallback ? <ScreenState title="Couldn’t load completed missions" message={errorMessage(query.error)} onRetry={() => void query.refetch()} /> : null}
+      {query.isError ? <ScreenState title="Couldn’t load completed missions" message={errorMessage(query.error)} onRetry={() => void query.refetch()} /> : null}
 
-      {!query.isLoading && (!query.isError || usingFallback) ? (
+      {!query.isLoading && !query.isError ? (
         <>
           <GlassCard accent={colors.borderStrong} style={styles.summary}>
             <View style={styles.checkCircle}><Check size={33} color={colors.primaryBright} strokeWidth={2.3} /></View>
@@ -140,8 +126,6 @@ function formatAmount(value: number) {
 }
 
 const styles = StyleSheet.create({
-  previewBanner: { flexDirection: "row", alignItems: "center", gap: spacing.xs, padding: spacing.sm, marginBottom: spacing.md, borderRadius: radii.md, backgroundColor: "rgba(255,184,77,0.07)", borderWidth: 1, borderColor: "rgba(255,184,77,0.22)" },
-  previewText: { ...type.caption, color: colors.warning },
   summary: { padding: spacing.lg, flexDirection: "row", alignItems: "center", gap: spacing.md },
   checkCircle: { width: 60, height: 60, borderRadius: 30, borderWidth: 2, borderColor: colors.primary, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(155,92,255,0.08)" },
   summaryText: { flex: 1 },

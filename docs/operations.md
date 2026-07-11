@@ -110,11 +110,10 @@ restart.
 | Zmienna | Domyślna wartość | Znaczenie |
 | --- | --- | --- |
 | `EXPO_PUBLIC_API_URL` | Android emulator: `http://10.0.2.2:8001`; pozostałe platformy: `http://localhost:8001` | publiczny adres Done API |
-| `EXPO_PUBLIC_DEMO_FALLBACK` | wyłączone, o ile wartość nie jest dokładnie `true` | opt-in do lokalnych danych fallback UI |
 
 Dla fizycznego telefonu ustaw `EXPO_PUBLIC_API_URL` na osiągalny adres LAN albo
-HTTPS reverse proxy. W production-like pozostaw `EXPO_PUBLIC_DEMO_FALLBACK=false`,
-aby błąd backendu nie był maskowany danymi demonstracyjnymi.
+HTTPS reverse proxy. Błąd backendu jest zawsze pokazywany w interfejsie i nigdy
+nie jest maskowany lokalnymi danymi demonstracyjnymi.
 
 ### API i granice demo
 
