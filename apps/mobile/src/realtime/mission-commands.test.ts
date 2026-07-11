@@ -268,4 +268,20 @@ describe("mission Realtime command execution", () => {
 
     expect(api.cancelMission).not.toHaveBeenCalled();
   });
+
+  it("rejects a destructive model tool call when the spoken intent does not match", async () => {
+    const api = commandApi();
+
+    await expect(executeMissionRealtimeCommand({
+      name: "cancel_mission",
+      callId: "call-hallucinated-cancel",
+      missionId: "mission-1",
+      revision: 4,
+    }, {
+      missionId: "mission-1",
+      voiceTranscript: "Jaki jest aktualny status misji?",
+    }, api)).rejects.toMatchObject({ code: "VOICE_INTENT_MISMATCH" });
+
+    expect(api.cancelMission).not.toHaveBeenCalled();
+  });
 });
