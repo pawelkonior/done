@@ -7,6 +7,7 @@ import { AppScreen } from "@/components/AppScreen";
 import { ApprovalCard } from "@/components/ApprovalCard";
 import { BasketCard } from "@/components/BasketCard";
 import { ContractCard } from "@/components/ContractCard";
+import { DecisionCard } from "@/components/DecisionCard";
 import { DeliveryOptions } from "@/components/DeliveryOptions";
 import { DetailHeader } from "@/components/PageHeader";
 import { EventTimeline } from "@/components/EventTimeline";
@@ -14,6 +15,7 @@ import { GlassCard } from "@/components/GlassCard";
 import { IconTile } from "@/components/IconTile";
 import { MetricsGrid } from "@/components/MetricsGrid";
 import { MissionComposer } from "@/components/MissionComposer";
+import { MissionTrackingCard } from "@/components/MissionTrackingCard";
 import { MissionTimeline } from "@/components/MissionTimeline";
 import { ProgressBar } from "@/components/ProgressBar";
 import { RecoveryBanner } from "@/components/RecoveryBanner";
@@ -60,7 +62,7 @@ export default function MissionDetailScreen() {
     );
   }
 
-  const { mission, contract, basket, approval, events, metrics, delivery_options: deliveryOptions } = detail;
+  const { mission, contract, basket, approval, portfolio_decision: portfolioDecision, order, events, metrics, delivery_options: deliveryOptions } = detail;
   const currentStep = mission.current_step || statusToStep(mission.status, 1);
   const recovered = Math.max(metrics.recovered_failures ?? 0, events.some((event) => event.type.includes("recover") || event.type.includes("replac") || event.type.includes("rerout")) ? 1 : 0);
   const isCompleted = mission.status === "completed";
@@ -176,6 +178,12 @@ export default function MissionDetailScreen() {
 
       <View style={styles.sectionGap}><RecoveryBanner recovered={recovered} active={mission.status === "recovering"} /></View>
 
+      {portfolioDecision ? (
+        <View style={styles.sectionGap}>
+          <DecisionCard decision={portfolioDecision} basket={basket} deadline={contract?.deadline} />
+        </View>
+      ) : null}
+
       {approvalPending && basket ? (
         <View style={styles.sectionGap}>
           <ApprovalCard
@@ -209,6 +217,7 @@ export default function MissionDetailScreen() {
         </View>
       ) : null}
       {basket ? <View style={styles.sectionGap}><BasketCard basket={basket} /></View> : null}
+      <View style={styles.sectionGap}><MissionTrackingCard missionStatus={mission.status} order={order} events={events} recovered={recovered} /></View>
       {events.length ? <View style={styles.sectionGap}><EventTimeline events={events} /></View> : null}
 
       {!isTerminal ? (

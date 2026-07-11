@@ -369,6 +369,44 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
         CREATE INDEX IF NOT EXISTS idx_approvals_decision ON approval_requests(decision_id);
         """,
     ),
+    (
+        5,
+        """
+        ALTER TABLE portfolio_decisions
+        ADD COLUMN execution_mode TEXT NOT NULL DEFAULT 'active'
+            CHECK(execution_mode IN ('active', 'shadow'));
+
+        CREATE INDEX IF NOT EXISTS idx_portfolio_decisions_mode
+            ON portfolio_decisions(mission_id, execution_mode, created_at);
+
+        CREATE TABLE IF NOT EXISTS portfolio_shadow_audits (
+            id TEXT PRIMARY KEY,
+            mission_id TEXT NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
+            shadow_decision_id TEXT NOT NULL REFERENCES portfolio_decisions(id),
+            active_decision_id TEXT REFERENCES portfolio_decisions(id),
+            active_basket_id TEXT REFERENCES baskets(id),
+            trigger TEXT NOT NULL,
+            snapshot_id TEXT NOT NULL REFERENCES market_snapshots(id),
+            shadow_status TEXT NOT NULL,
+            shadow_total_cents INTEGER NOT NULL CHECK(shadow_total_cents >= 0),
+            active_decision_total_cents INTEGER,
+            active_basket_total_cents INTEGER,
+            shadow_recommendation_json TEXT NOT NULL,
+            active_recommendation_json TEXT NOT NULL,
+            difference_json TEXT NOT NULL,
+            not_executed_reason TEXT NOT NULL,
+            feasible INTEGER NOT NULL,
+            orange_mode INTEGER NOT NULL,
+            solver_time_ms INTEGER NOT NULL CHECK(solver_time_ms >= 0),
+            price_delta_cents INTEGER,
+            recommendation_changed INTEGER NOT NULL,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_portfolio_shadow_mission_created
+            ON portfolio_shadow_audits(mission_id, created_at);
+        """,
+    ),
 )
 
 
@@ -452,6 +490,7 @@ class Database:
         with self.transaction() as connection:
             for table in (
                 "optimizer_runs",
+                "portfolio_shadow_audits",
                 "portfolio_actions",
                 "approval_requests",
                 "portfolio_decisions",

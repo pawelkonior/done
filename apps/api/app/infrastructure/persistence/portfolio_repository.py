@@ -289,10 +289,11 @@ class PortfolioRepository:
               )
               AND snapshot.catalog_hash = ?
               AND snapshot.freshness_deadline > ?
+              AND decision.execution_mode = 'active'
               AND decision.id = (
                     SELECT latest.id
                     FROM portfolio_decisions AS latest
-                    WHERE latest.mission_id = ?
+                    WHERE latest.mission_id = ? AND latest.execution_mode = 'active'
                     ORDER BY latest.rowid DESC
                     LIMIT 1
               )
@@ -434,9 +435,9 @@ class PortfolioRepository:
             """
             INSERT INTO portfolio_decisions
                 (id, mission_id, plan_state_id, snapshot_id, trigger, idempotency_key,
-                 status, selected_merchant_id, total_cents, currency,
+                 status, selected_merchant_id, total_cents, currency, execution_mode,
                  constraint_report_json, explanations_json, solver_metadata_json, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 decision.id,
@@ -449,6 +450,7 @@ class PortfolioRepository:
                 decision.selected_merchant_id,
                 decision.total_cents,
                 decision.currency,
+                decision.execution_mode,
                 _dump(list(decision.constraint_report)),
                 _dump(list(decision.explanations)),
                 _dump(decision.solver_metadata),
@@ -512,11 +514,25 @@ class PortfolioRepository:
         row = connection.execute(
             """
             SELECT * FROM portfolio_decisions
-            WHERE mission_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1
+            WHERE mission_id = ? AND execution_mode = 'active'
+            ORDER BY created_at DESC, rowid DESC LIMIT 1
             """,
             (mission_id,),
         ).fetchone()
         return self._decision_projection(connection, row) if row else None
+
+    def latest_active_decision(
+        self, connection: sqlite3.Connection, mission_id: str
+    ) -> PortfolioDecision | None:
+        row = connection.execute(
+            """
+            SELECT * FROM portfolio_decisions
+            WHERE mission_id = ? AND execution_mode = 'active'
+            ORDER BY created_at DESC, rowid DESC LIMIT 1
+            """,
+            (mission_id,),
+        ).fetchone()
+        return self._decision_from_row(connection, row) if row else None
 
     def decision_history_projection(
         self, connection: sqlite3.Connection, mission_id: str
@@ -524,11 +540,123 @@ class PortfolioRepository:
         rows = connection.execute(
             """
             SELECT * FROM portfolio_decisions
-            WHERE mission_id = ? ORDER BY created_at ASC, rowid ASC
+            WHERE mission_id = ? AND execution_mode = 'active'
+            ORDER BY created_at ASC, rowid ASC
             """,
             (mission_id,),
         ).fetchall()
         return [self._decision_projection(connection, row) for row in rows]
+
+    def persist_shadow_audit(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        mission_id: str,
+        trigger: PortfolioTrigger,
+        shadow_decision: PortfolioDecision,
+        active_decision: PortfolioDecision | None,
+        active_basket: sqlite3.Row | None,
+        shadow_recommendation: list[dict[str, object]],
+        active_recommendation: list[dict[str, object]],
+        difference: dict[str, object],
+        not_executed_reason: str,
+        solver_time_ms: int,
+        price_delta_cents: int | None,
+    ) -> dict[str, object]:
+        audit_id = _id("sha")
+        active_basket_total = int(active_basket["total_cents"]) if active_basket else None
+        active_decision_total = active_decision.total_cents if active_decision else None
+        recommendation_changed = bool(difference.get("recommendation_changed", False))
+        connection.execute(
+            """
+            INSERT INTO portfolio_shadow_audits
+                (id, mission_id, shadow_decision_id, active_decision_id, active_basket_id,
+                 trigger, snapshot_id, shadow_status, shadow_total_cents,
+                 active_decision_total_cents, active_basket_total_cents,
+                 shadow_recommendation_json, active_recommendation_json, difference_json,
+                 not_executed_reason, feasible, orange_mode, solver_time_ms,
+                 price_delta_cents, recommendation_changed, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                audit_id,
+                mission_id,
+                shadow_decision.id,
+                active_decision.id if active_decision else None,
+                active_basket["id"] if active_basket else None,
+                trigger.value,
+                shadow_decision.snapshot_id,
+                shadow_decision.status.value,
+                shadow_decision.total_cents,
+                active_decision_total,
+                active_basket_total,
+                _dump(shadow_recommendation),
+                _dump(active_recommendation),
+                _dump(difference),
+                not_executed_reason,
+                int(shadow_decision.status in {PortfolioDecisionStatus.FEASIBLE, PortfolioDecisionStatus.WAITING}),
+                int(any(action.timing_mode.value == "orange" for action in shadow_decision.selected_actions)),
+                solver_time_ms,
+                price_delta_cents,
+                int(recommendation_changed),
+                shadow_decision.created_at.isoformat(timespec="milliseconds") if shadow_decision.created_at else _timestamp(datetime.now(UTC)),
+            ),
+        )
+        row = connection.execute(
+            "SELECT * FROM portfolio_shadow_audits WHERE id = ?", (audit_id,)
+        ).fetchone()
+        assert row is not None
+        return self._shadow_audit_projection(row)
+
+    def shadow_audit_history_projection(
+        self, connection: sqlite3.Connection, mission_id: str
+    ) -> list[dict[str, object]]:
+        rows = connection.execute(
+            """
+            SELECT * FROM portfolio_shadow_audits
+            WHERE mission_id = ? ORDER BY created_at ASC, rowid ASC
+            """,
+            (mission_id,),
+        ).fetchall()
+        return [self._shadow_audit_projection(row) for row in rows]
+
+    def shadow_telemetry_projection(
+        self, connection: sqlite3.Connection, mission_id: str | None = None
+    ) -> dict[str, object]:
+        where = "WHERE mission_id = ?" if mission_id else ""
+        params = (mission_id,) if mission_id else ()
+        rows = connection.execute(
+            f"SELECT * FROM portfolio_shadow_audits {where} ORDER BY created_at ASC, rowid ASC",
+            params,
+        ).fetchall()
+        total = len(rows)
+        feasible = sum(bool(row["feasible"]) for row in rows)
+        orange = sum(bool(row["orange_mode"]) for row in rows)
+        replans = sum(row["trigger"] in {"contract_revised", "manual_replan"} for row in rows)
+        recommendation_changes = sum(bool(row["recommendation_changed"]) for row in rows)
+        deltas = [int(row["price_delta_cents"]) for row in rows if row["price_delta_cents"] is not None]
+        relative_deltas = [
+            abs(int(row["price_delta_cents"])) / max(
+                int(row["active_basket_total_cents"] or row["active_decision_total_cents"] or 0), 1
+            )
+            for row in rows
+            if row["price_delta_cents"] is not None
+        ]
+        return {
+            "total_shadow_runs": total,
+            "feasible_runs": feasible,
+            "feasibility_rate": feasible / total if total else 0.0,
+            "orange_mode_runs": orange,
+            "orange_mode_rate": orange / total if total else 0.0,
+            "solver_time_ms_avg": sum(int(row["solver_time_ms"]) for row in rows) / total if total else 0.0,
+            "replan_runs": replans,
+            "replan_rate": replans / total if total else 0.0,
+            "recommendation_difference_runs": recommendation_changes,
+            "recommendation_difference_rate": recommendation_changes / total if total else 0.0,
+            "price_delta_avg_cents": sum(deltas) / len(deltas) if deltas else 0.0,
+            "price_delta_abs_avg_cents": sum(abs(delta) for delta in deltas) / len(deltas) if deltas else 0.0,
+            "price_delta_rate_avg": sum(relative_deltas) / len(relative_deltas) if relative_deltas else 0.0,
+        }
 
     @staticmethod
     def _plan_state(row: sqlite3.Row) -> PlanState:
@@ -603,6 +731,7 @@ class PortfolioRepository:
             ),
             explanations=tuple(str(item) for item in _load(row["explanations_json"], [])),
             solver_metadata=metadata if isinstance(metadata, dict) else {},
+            execution_mode=row["execution_mode"],
             created_at=_aware(row["created_at"]),
         )
 
@@ -677,6 +806,7 @@ class PortfolioRepository:
         return {
             "id": row["id"],
             "trigger": row["trigger"],
+            "execution_mode": row["execution_mode"],
             "status": row["status"],
             "snapshot_id": row["snapshot_id"],
             "selected_merchant_id": row["selected_merchant_id"],
@@ -703,4 +833,42 @@ class PortfolioRepository:
                 }
                 for action in actions
             ],
+        }
+
+    @staticmethod
+    def _shadow_audit_projection(row: sqlite3.Row) -> dict[str, object]:
+        return {
+            "id": row["id"],
+            "mission_id": row["mission_id"],
+            "shadow_decision_id": row["shadow_decision_id"],
+            "active_decision_id": row["active_decision_id"],
+            "active_basket_id": row["active_basket_id"],
+            "trigger": row["trigger"],
+            "snapshot_id": row["snapshot_id"],
+            "shadow_status": row["shadow_status"],
+            "shadow_total": row["shadow_total_cents"] / 100,
+            "active_decision_total": (
+                row["active_decision_total_cents"] / 100
+                if row["active_decision_total_cents"] is not None
+                else None
+            ),
+            "active_basket_total": (
+                row["active_basket_total_cents"] / 100
+                if row["active_basket_total_cents"] is not None
+                else None
+            ),
+            "shadow_recommendation": _load(row["shadow_recommendation_json"], []),
+            "active_recommendation": _load(row["active_recommendation_json"], []),
+            "difference": _load(row["difference_json"], {}),
+            "not_executed_reason": row["not_executed_reason"],
+            "feasible": bool(row["feasible"]),
+            "orange_mode": bool(row["orange_mode"]),
+            "solver_time_ms": row["solver_time_ms"],
+            "price_delta": (
+                row["price_delta_cents"] / 100
+                if row["price_delta_cents"] is not None
+                else None
+            ),
+            "recommendation_changed": bool(row["recommendation_changed"]),
+            "created_at": row["created_at"],
         }

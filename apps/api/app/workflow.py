@@ -17,6 +17,7 @@ from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.application.portfolio_planning_service import PortfolioPlanningService
+from app.config import PortfolioShadowSettings
 from app.domain.common import Money
 from app.domain.mission.model import Constraint, ConstraintKind, MissionContract
 from app.domain.mission.policies import (
@@ -100,10 +101,15 @@ def normalize_failure_type(failure_type: str) -> str:
 
 class MissionWorkflow:
     def __init__(
-        self, database: Database, *, portfolio_planner: PortfolioPlanningService | None = None
+        self,
+        database: Database,
+        *,
+        portfolio_planner: PortfolioPlanningService | None = None,
+        portfolio_shadow_settings: PortfolioShadowSettings | None = None,
     ):
         self.database = database
         self.portfolio_planner = portfolio_planner or PortfolioPlanningService()
+        self.portfolio_shadow_settings = portfolio_shadow_settings or PortfolioShadowSettings()
 
     # ------------------------------------------------------------------
     # Public commands
@@ -335,6 +341,12 @@ class MissionWorkflow:
                     payload={"decision_id": decision.id, "reasons": list(decision.constraint_report)},
                 )
                 self._set_state(connection, mission_id, "failed", 4)
+                self._run_shadow_if_enabled(
+                    connection,
+                    mission_id=mission_id,
+                    trigger=PortfolioTrigger.MISSION_CREATED,
+                    preferred_merchants=policy.preferred_merchant_ids,
+                )
                 return self._detail(connection, mission_id)
             if decision.status is PortfolioDecisionStatus.INTERNAL_VALIDATION_ERROR:
                 self._event(
@@ -348,6 +360,12 @@ class MissionWorkflow:
                     payload={"decision_id": decision.id, "reasons": list(decision.constraint_report)},
                 )
                 self._set_state(connection, mission_id, "failed", 4)
+                self._run_shadow_if_enabled(
+                    connection,
+                    mission_id=mission_id,
+                    trigger=PortfolioTrigger.MISSION_CREATED,
+                    preferred_merchants=policy.preferred_merchant_ids,
+                )
                 return self._detail(connection, mission_id)
             if decision.status is PortfolioDecisionStatus.WAITING:
                 self._event(
@@ -360,6 +378,12 @@ class MissionWorkflow:
                     payload={"decision_id": decision.id, "reasons": list(decision.explanations)},
                 )
                 self._set_state(connection, mission_id, "waiting", 4)
+                self._run_shadow_if_enabled(
+                    connection,
+                    mission_id=mission_id,
+                    trigger=PortfolioTrigger.MISSION_CREATED,
+                    preferred_merchants=policy.preferred_merchant_ids,
+                )
                 return self._detail(connection, mission_id)
 
             delivery_at = self._delivery_time(interpreted["deadline"], hours_before=2)
@@ -561,6 +585,13 @@ class MissionWorkflow:
                     },
                 )
                 self._execute_approved_mission(connection, mission_id)
+
+            self._run_shadow_if_enabled(
+                connection,
+                mission_id=mission_id,
+                trigger=PortfolioTrigger.MISSION_CREATED,
+                preferred_merchants=policy.preferred_merchant_ids,
+            )
 
         return self.get_detail(mission_id)
 
@@ -1027,6 +1058,177 @@ class MissionWorkflow:
             )
             return {"items": items, "decisions": items, "total": len(items)}
 
+    def run_portfolio_shadow(
+        self,
+        mission_id: str,
+        *,
+        trigger: PortfolioTrigger = PortfolioTrigger.MANUAL_REPLAN,
+    ) -> dict[str, Any]:
+        """Evaluate the planner without touching checkout state."""
+
+        with self.database.transaction() as connection:
+            self._require_mission(connection, mission_id)
+            return self._run_shadow_in_transaction(
+                connection, mission_id=mission_id, trigger=trigger
+            )
+
+    def get_portfolio_shadow_audits(self, mission_id: str) -> dict[str, Any]:
+        with self.database.reader() as connection:
+            self._require_mission(connection, mission_id)
+            items = self.portfolio_planner.repository.shadow_audit_history_projection(
+                connection, mission_id
+            )
+            return {"items": items, "audits": items, "total": len(items)}
+
+    def get_portfolio_shadow_telemetry(self, mission_id: str | None = None) -> dict[str, Any]:
+        with self.database.reader() as connection:
+            if mission_id:
+                self._require_mission(connection, mission_id)
+            return self.portfolio_planner.repository.shadow_telemetry_projection(
+                connection, mission_id
+            )
+
+    def _run_shadow_if_enabled(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        mission_id: str,
+        trigger: PortfolioTrigger,
+        preferred_merchants: tuple[str, ...],
+    ) -> dict[str, Any] | None:
+        if not self.portfolio_shadow_settings.enabled:
+            return None
+        return self._run_shadow_in_transaction(
+            connection,
+            mission_id=mission_id,
+            trigger=trigger,
+            preferred_merchants=preferred_merchants,
+        )
+
+    def _run_shadow_in_transaction(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        mission_id: str,
+        trigger: PortfolioTrigger,
+        preferred_merchants: tuple[str, ...] = (),
+    ) -> dict[str, Any]:
+        shadow_decision = self.portfolio_planner.run(
+            connection,
+            mission_id=mission_id,
+            trigger=trigger,
+            preferred_merchants=preferred_merchants,
+            execution_mode="shadow",
+        )
+        active_decision = self.portfolio_planner.repository.latest_active_decision(
+            connection, mission_id
+        )
+        active_basket = connection.execute(
+            """
+            SELECT * FROM baskets
+            WHERE mission_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1
+            """,
+            (mission_id,),
+        ).fetchone()
+        shadow_recommendation = self._decision_recommendation(shadow_decision)
+        active_recommendation = (
+            self._decision_recommendation(active_decision) if active_decision else []
+        )
+        basket_recommendation = self._basket_recommendation(connection, active_basket)
+        active_total = (
+            active_basket["total_cents"]
+            if active_basket is not None
+            else active_decision.total_cents if active_decision else None
+        )
+        price_delta = shadow_decision.total_cents - active_total if active_total is not None else None
+        recommendation_changed = shadow_recommendation != active_recommendation
+        difference = {
+            "recommendation_changed": recommendation_changed,
+            "basket_recommendation_changed": shadow_recommendation != basket_recommendation,
+            "selected_merchant_changed": (
+                active_decision is not None
+                and shadow_decision.selected_merchant_id != active_decision.selected_merchant_id
+            ),
+            "status_changed": (
+                active_decision is not None
+                and shadow_decision.status.value != active_decision.status.value
+            ),
+            "price_delta_cents": price_delta,
+            "active_decision_total_cents": active_decision.total_cents if active_decision else None,
+            "active_basket_total_cents": active_basket["total_cents"] if active_basket else None,
+        }
+        audit = self.portfolio_planner.repository.persist_shadow_audit(
+            connection,
+            mission_id=mission_id,
+            trigger=trigger,
+            shadow_decision=shadow_decision,
+            active_decision=active_decision,
+            active_basket=active_basket,
+            shadow_recommendation=shadow_recommendation,
+            active_recommendation=active_recommendation,
+            difference=difference,
+            not_executed_reason="shadow_mode_enabled; execution_disabled",
+            solver_time_ms=int(shadow_decision.solver_metadata.get("solver_time_ms", 0)),
+            price_delta_cents=price_delta,
+        )
+        self._event(
+            connection,
+            mission_id,
+            "portfolio.shadow_audit",
+            "shadow_solver",
+            "Shadow portfolio decision recorded",
+            "The shadow recommendation was evaluated on live catalog data and not executed.",
+            severity="warning" if recommendation_changed else "info",
+            payload={
+                "audit_id": audit["id"],
+                "trigger": trigger.value,
+                "shadow_decision_id": shadow_decision.id,
+                "active_decision_id": active_decision.id if active_decision else None,
+                "snapshot_id": shadow_decision.snapshot_id,
+                "shadow_recommendation": shadow_recommendation,
+                "active_recommendation": active_recommendation,
+                "active_basket_recommendation": basket_recommendation,
+                "difference": difference,
+                "not_executed_reason": "shadow_mode_enabled; execution_disabled",
+            },
+        )
+        return audit
+
+    @staticmethod
+    def _decision_recommendation(decision: Any | None) -> list[dict[str, object]]:
+        if decision is None:
+            return []
+        return [
+            {
+                "product_id": action.offer.product_id,
+                "quantity": action.quantity,
+                "action": action.action.value,
+            }
+            for action in decision.selected_actions
+        ]
+
+    @staticmethod
+    def _basket_recommendation(
+        connection: sqlite3.Connection, basket: sqlite3.Row | None
+    ) -> list[dict[str, object]]:
+        if basket is None:
+            return []
+        rows = connection.execute(
+            """
+            SELECT product_id, quantity FROM basket_items
+            WHERE basket_id = ? ORDER BY product_id ASC
+            """,
+            (basket["id"],),
+        ).fetchall()
+        return [
+            {
+                "product_id": row["product_id"],
+                "quantity": row["quantity"],
+                "action": "buy_now",
+            }
+            for row in rows
+        ]
+
     # ------------------------------------------------------------------
     # Public queries
     # ------------------------------------------------------------------
@@ -1172,6 +1374,12 @@ class MissionWorkflow:
                 requires_approval=False,
                 increment_revision=increment_revision,
             )
+            self._run_shadow_if_enabled(
+                connection,
+                mission_id=mission_id,
+                trigger=trigger,
+                preferred_merchants=policy.preferred_merchant_ids,
+            )
             return self._detail(connection, mission_id)
 
         if decision.status is PortfolioDecisionStatus.WAITING:
@@ -1192,6 +1400,12 @@ class MissionWorkflow:
                 current_step=4,
                 requires_approval=False,
                 increment_revision=increment_revision,
+            )
+            self._run_shadow_if_enabled(
+                connection,
+                mission_id=mission_id,
+                trigger=trigger,
+                preferred_merchants=policy.preferred_merchant_ids,
             )
             return self._detail(connection, mission_id)
 
@@ -1237,6 +1451,12 @@ class MissionWorkflow:
         )
         if not approval_required:
             self._execute_approved_mission(connection, mission_id)
+        self._run_shadow_if_enabled(
+            connection,
+            mission_id=mission_id,
+            trigger=trigger,
+            preferred_merchants=policy.preferred_merchant_ids,
+        )
         return self._detail(connection, mission_id)
 
     def _materialize_portfolio_basket(

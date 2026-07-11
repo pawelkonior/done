@@ -116,6 +116,10 @@ Sekcja `speech_to_text` zawiera model, status dostępności OpenAI i bezpieczny
 zwraca sekcji ogólnego AI, ponieważ tekstowe misje są interpretowane
 deterministycznie i nie korzystają z zewnętrznego modelu.
 
+Odpowiedź zawiera również `portfolio_automation` z flagami `shadow_mode`,
+`autonomy_enabled`, `automatic_purchases_default: false` oraz ręczną
+`promotion_gate`.
+
 ### `POST /v1/realtime/client-secret`
 
 Tworzy krótko żyjący sekret do bezpośredniej sesji WebRTC. Request:
@@ -289,6 +293,23 @@ Najważniejsze elementy:
 - `order` i `summary` są `null` przed zakończeniem.
 
 Brak misji: `404`.
+
+### Shadow mode portfolio
+
+`POST /v1/missions/{mission_id}/portfolio-shadow` uruchamia jawny shadow run,
+gdy `DONE_PORTFOLIO_SHADOW_MODE=true`. Planner korzysta z aktualnych danych
+katalogu i utrwala decyzję z `execution_mode: "shadow"`, ale nie zmienia
+`basket`, `approval`, `payment_attempts`, `order`, statusu ani revision misji.
+Przy wyłączonej fladze endpoint zwraca `409`.
+
+`GET /v1/missions/{mission_id}/portfolio-shadow-audits` zwraca porównania
+shadow z aktywną decyzją i koszykiem: `snapshot_id`, trigger, rekomendacje,
+różnicę ceny/rekomendacji, czas solvera i `not_executed_reason`.
+
+`GET /v1/portfolio/shadow/telemetry` zwraca agregaty wykonalności, Orange Mode,
+solver time, replan rate i różnic ceny/rekomendacji oraz konfigurację bramki
+promocji. Shadow decyzje nie są uwzględniane w aktywnym `portfolio_decision`
+ani w historii aktywnych decyzji.
 
 ### `GET /v1/missions/{mission_id}/events`
 

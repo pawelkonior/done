@@ -125,6 +125,11 @@ aby błąd backendu nie był maskowany danymi demonstracyjnymi.
 | `DONE_STT_ENABLED` | `false` | tworzy adapter OpenAI `gpt-4o-transcribe` |
 | `DONE_DEMO_FAILURES_ENABLED` | `true` | automatyczne syntetyczne awarie w nowych misjach |
 | `DONE_DEMO_ENDPOINTS_ENABLED` | `true` | endpointy reset/fault injection; po wyłączeniu zwracają `404` |
+| `DONE_PORTFOLIO_SHADOW_MODE` | `false` | uruchamia porównawczą ocenę portfolio bez checkoutu, płatności, koszyka i approval |
+| `DONE_PORTFOLIO_AUTONOMY_ENABLED` | `false` | ręcznie kontrolowana flaga ograniczonej autonomii; domyślnie wyłączona |
+| `DONE_PORTFOLIO_SHADOW_MIN_RUNS` | `100` | minimalna liczba shadow runów przed przeglądem promocji |
+| `DONE_PORTFOLIO_SHADOW_MAX_RECOMMENDATION_DIFF_RATE` | `0.01` | maks. 1% różnic rekomendacji w bramce promocji |
+| `DONE_PORTFOLIO_SHADOW_MAX_PRICE_DELTA_RATE` | `0.02` | maks. 2% średniej bezwzględnej różnicy ceny w bramce promocji |
 
 Wartości boolean akceptują `1/0`, `true/false`, `yes/no` i `on/off`.
 
@@ -316,6 +321,30 @@ Istniejące `SpeechToTextPort`, `RealtimeSessionPort`, `MissionWorkflowPort` i
 `UserRepository` pokazują kierunek dependency inversion.
 `OpenAITranscriptionAdapter`, `OpenAIRealtimeAdapter` i `SQLiteUserRepository`
 są adapterami; symulator commerce nie ma jeszcze analogicznej granicy.
+
+## Shadow mode portfolio i próg promocji
+
+`DONE_PORTFOLIO_SHADOW_MODE=false` jest bezpiecznym ustawieniem domyślnym.
+Po włączeniu aktywny workflow działa jak dotychczas, a dodatkowy planner wykonuje
+się na rzeczywistym snapshotcie katalogu w `execution_mode=shadow`. Shadow zapisuje
+decyzję, `optimizer_runs`, rekord porównawczy i event `portfolio.shadow_audit`, ale
+nie może zmienić koszyka, approval, płatności, zamówienia, statusu ani revision misji.
+
+Operator może sprawdzić:
+
+- `GET /v1/portfolio/shadow/telemetry` — wykonalność, Orange Mode, średni czas
+  solvera, replan rate oraz różnice ceny i rekomendacji;
+- `GET /v1/missions/{id}/portfolio-shadow-audits` — audyt snapshotu, triggera,
+  rekomendacji aktywnej i shadow oraz powód niewykonania;
+- `POST /v1/missions/{id}/portfolio-shadow` — jawny shadow run, dostępny tylko
+  przy włączonej fladze.
+
+Rekomendowany próg przejścia do ograniczonej autonomii: co najmniej 100 shadow
+runów z wykonalnością monitorowaną przez operatora, różnicą rekomendacji <=1%,
+średnią bezwzględną różnicą ceny <=2% oraz bez niezaakceptowanych regresji Orange
+Mode. Po spełnieniu progu wymagana jest osobna, ręczna zmiana konfiguracji i
+canary dla ograniczonej klasy niskiego ryzyka; pełne automatyczne zakupy nadal
+nie są domyślne.
 
 ## Weryfikacja przed wydaniem
 

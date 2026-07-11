@@ -2,6 +2,7 @@ export type MissionStatus =
   | "created"
   | "transcribing"
   | "understanding"
+  | "clarification_required"
   | "planning"
   | "searching"
   | "optimizing"
@@ -76,6 +77,43 @@ export interface ApprovalRequest {
   created_at: string;
 }
 
+export type PortfolioActionKind = "buy_now" | "wait" | string;
+
+export interface PortfolioAction {
+  need_id: string;
+  quantity: number;
+  product_id: string;
+  product_name: string;
+  merchant_id: string;
+  action: PortfolioActionKind;
+  timing_mode: string;
+  price_signal: string;
+  risk_score: number;
+  lptb?: {
+    lptb: string;
+    p95_delivery_days: number;
+    safety_buffer_days: number;
+    reason: string;
+  } | null;
+  objective_cost: number;
+  explanation: string;
+}
+
+export interface PortfolioDecision {
+  id: string;
+  trigger: string;
+  status: string;
+  snapshot_id: string;
+  selected_merchant_id?: string | null;
+  total: number;
+  currency: string;
+  constraint_report: string[];
+  explanations: string[];
+  solver_metadata: Record<string, unknown>;
+  created_at: string;
+  actions: PortfolioAction[];
+}
+
 export interface MissionEvent {
   id: string;
   type: string;
@@ -94,7 +132,18 @@ export interface DeliveryOption {
   currency: string;
   badge: string;
   selected: boolean;
+  available?: boolean;
   reliability?: number;
+}
+
+export interface MissionOrder {
+  id: string;
+  confirmation_code: string;
+  status: string;
+  total: number;
+  currency: string;
+  delivery_at: string;
+  created_at: string;
 }
 
 export interface MissionMetrics {
@@ -115,6 +164,8 @@ export interface MissionDetail {
   contract: MissionContract | null;
   basket: Basket | null;
   approval: ApprovalRequest | null;
+  portfolio_decision: PortfolioDecision | null;
+  order: MissionOrder | null;
   events: MissionEvent[];
   metrics: MissionMetrics;
   delivery_options: DeliveryOption[];

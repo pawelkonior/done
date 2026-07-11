@@ -30,7 +30,9 @@ from .application.ports.ai import SpeechToTextPort
 from .application.ports.realtime import RealtimeSessionPort
 from .application.user_service import UserApplicationService
 from .config import (
+    PortfolioShadowSettings,
     RealtimeSettings,
+    get_portfolio_shadow_settings,
     get_realtime_settings,
     get_transcription_settings,
 )
@@ -132,6 +134,7 @@ def create_app(
     speech_to_text: SpeechToTextPort | None = None,
     realtime: RealtimeSessionPort | None = None,
     realtime_settings: RealtimeSettings | None = None,
+    portfolio_shadow_settings: PortfolioShadowSettings | None = None,
 ) -> FastAPI:
     resolved_path = database_path or os.getenv(
         "DONE_DB_PATH", str(Path(__file__).resolve().parents[1] / "done.sqlite3")
@@ -139,7 +142,12 @@ def create_app(
     database = Database(resolved_path)
     database.initialize()
     portfolio_planner = PortfolioPlanningService()
-    workflow = MissionWorkflow(database, portfolio_planner=portfolio_planner)
+    resolved_shadow_settings = portfolio_shadow_settings or get_portfolio_shadow_settings()
+    workflow = MissionWorkflow(
+        database,
+        portfolio_planner=portfolio_planner,
+        portfolio_shadow_settings=resolved_shadow_settings,
+    )
     user_service = UserApplicationService(SQLiteUserRepository(database))
     runtime_settings = mission_settings or MissionServiceSettings.from_env()
     transcription_settings = get_transcription_settings()
@@ -176,6 +184,7 @@ def create_app(
     application.state.database = database
     application.state.workflow = workflow
     application.state.portfolio_planner = portfolio_planner
+    application.state.portfolio_shadow_settings = resolved_shadow_settings
     application.state.user_service = user_service
     application.state.mission_service = mission_service
     application.state.realtime = resolved_realtime
@@ -326,6 +335,12 @@ def create_app(
                     "model": live_settings.model,
                     "detail": "Live voice health check failed.",
                 }
+        capabilities["portfolio_automation"] = {
+            "shadow_mode": resolved_shadow_settings.enabled,
+            "autonomy_enabled": resolved_shadow_settings.autonomy_enabled,
+            "automatic_purchases_default": False,
+            "promotion_gate": resolved_shadow_settings.promotion_gate,
+        }
         return capabilities
 
     @application.post(
@@ -447,6 +462,30 @@ def create_app(
     @application.get("/v1/missions/{mission_id}/portfolio-decisions", tags=["missions"])
     def portfolio_decisions(mission_id: str) -> dict[str, object]:
         return workflow.get_portfolio_decisions(mission_id)
+
+    @application.post("/v1/missions/{mission_id}/portfolio-shadow", tags=["missions"])
+    def run_portfolio_shadow(mission_id: str) -> dict[str, object]:
+        if not resolved_shadow_settings.enabled:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Portfolio shadow mode is disabled",
+            )
+        return workflow.run_portfolio_shadow(mission_id)
+
+    @application.get(
+        "/v1/missions/{mission_id}/portfolio-shadow-audits", tags=["missions"]
+    )
+    def portfolio_shadow_audits(mission_id: str) -> dict[str, object]:
+        return workflow.get_portfolio_shadow_audits(mission_id)
+
+    @application.get("/v1/portfolio/shadow/telemetry", tags=["system"])
+    def portfolio_shadow_telemetry() -> dict[str, object]:
+        return {
+            "enabled": resolved_shadow_settings.enabled,
+            "autonomy_enabled": resolved_shadow_settings.autonomy_enabled,
+            "promotion_gate": resolved_shadow_settings.promotion_gate,
+            "metrics": workflow.get_portfolio_shadow_telemetry(),
+        }
 
     @application.post("/v1/missions/{mission_id}/replan", tags=["missions"])
     def replan_mission(

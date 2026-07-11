@@ -16,6 +16,9 @@ import type {
   MissionMetrics,
   MissionSummary,
   MissionStatus,
+  MissionOrder,
+  PortfolioAction,
+  PortfolioDecision,
   PaymentMethod,
   RealtimeClientSecret,
   RuntimeCapabilities,
@@ -228,6 +231,68 @@ function normalizeEvent(value: unknown, index: number): MissionEvent {
   };
 }
 
+function normalizeTextList(value: unknown): string[] {
+  return asArray(value)
+    .map((item) => {
+      if (typeof item === "string") return item;
+      const raw = asRecord(item);
+      return asString(raw.message, asString(raw.reason, asString(raw.text)));
+    })
+    .filter(Boolean);
+}
+
+function normalizeLptb(value: unknown): PortfolioAction["lptb"] {
+  if (!value) return null;
+  const raw = asRecord(value);
+  return {
+    lptb: asString(raw.lptb),
+    p95_delivery_days: asNumber(raw.p95_delivery_days),
+    safety_buffer_days: asNumber(raw.safety_buffer_days),
+    reason: asString(raw.reason),
+  };
+}
+
+function normalizePortfolioAction(value: unknown, index: number): PortfolioAction {
+  const raw = asRecord(value);
+  const explanation = raw.explanation;
+  const explanationRecord = asRecord(explanation);
+  return {
+    need_id: asString(raw.need_id, `need-${index}`),
+    quantity: asNumber(raw.quantity, 1),
+    product_id: asString(raw.product_id),
+    product_name: asString(raw.product_name, "Selected product"),
+    merchant_id: asString(raw.merchant_id),
+    action: asString(raw.action, "buy_now"),
+    timing_mode: asString(raw.timing_mode),
+    price_signal: asString(raw.price_signal, asString(asRecord(raw.price_signal).kind)),
+    risk_score: Math.min(1, Math.max(0, asNumber(raw.risk_score))),
+    lptb: normalizeLptb(raw.lptb),
+    objective_cost: asNumber(raw.objective_cost),
+    explanation: typeof explanation === "string"
+      ? explanation
+      : asString(explanationRecord.message, asString(explanationRecord.reason, "Selected by the optimization plan.")),
+  };
+}
+
+function normalizePortfolioDecision(value: unknown): PortfolioDecision | null {
+  if (!value) return null;
+  const raw = asRecord(value);
+  return {
+    id: asString(raw.id),
+    trigger: asString(raw.trigger),
+    status: asString(raw.status, "feasible"),
+    snapshot_id: asString(raw.snapshot_id),
+    selected_merchant_id: typeof raw.selected_merchant_id === "string" ? raw.selected_merchant_id : null,
+    total: asNumber(raw.total),
+    currency: asString(raw.currency, "PLN"),
+    constraint_report: normalizeTextList(raw.constraint_report),
+    explanations: normalizeTextList(raw.explanations),
+    solver_metadata: asRecord(raw.solver_metadata),
+    created_at: asString(raw.created_at),
+    actions: asArray(raw.actions).map(normalizePortfolioAction),
+  };
+}
+
 function normalizeMetrics(value: unknown): MissionMetrics {
   const raw = asRecord(value);
   const budget = asNumber(raw.budget, asNumber(raw.budget_limit));
@@ -255,7 +320,22 @@ function normalizeDelivery(value: unknown, index: number): DeliveryOption {
     currency: asString(raw.currency, "PLN"),
     badge: asString(raw.badge, selected ? "Recommended" : index === 1 ? "Most reliable" : "Best value"),
     selected,
+    available: asBoolean(raw.available, true),
     reliability: asNumber(raw.reliability, asNumber(raw.confidence)),
+  };
+}
+
+function normalizeOrder(value: unknown): MissionOrder | null {
+  if (!value) return null;
+  const raw = asRecord(value);
+  return {
+    id: asString(raw.id),
+    confirmation_code: asString(raw.confirmation_code),
+    status: asString(raw.status, "placed"),
+    total: asNumber(raw.total),
+    currency: asString(raw.currency, "PLN"),
+    delivery_at: asString(raw.delivery_at),
+    created_at: asString(raw.created_at),
   };
 }
 
@@ -369,6 +449,8 @@ function normalizeDetail(value: unknown): MissionDetail {
       : null,
     basket: normalizeBasket(raw.basket),
     approval: normalizeApproval(raw.approval),
+    portfolio_decision: normalizePortfolioDecision(raw.portfolio_decision),
+    order: normalizeOrder(raw.order),
     events: asArray(raw.events).map(normalizeEvent),
     metrics: normalizeMetrics(raw.metrics),
     delivery_options: asArray(raw.delivery_options).map(normalizeDelivery),
@@ -464,6 +546,7 @@ export async function correctMission(missionId: string, input: MissionCorrection
   const raw = await apiFetch<JsonRecord>(`/v1/missions/${missionId}/corrections`, {
     method: "POST",
     body: JSON.stringify(input),
+    headers: revisionHeaders(input.expected_revision),
   });
   return normalizeDetail(raw);
 }
@@ -472,8 +555,15 @@ export async function selectDeliveryOption(missionId: string, input: DeliverySel
   const raw = await apiFetch<JsonRecord>(`/v1/missions/${missionId}/delivery-option`, {
     method: "PUT",
     body: JSON.stringify(input),
+    headers: revisionHeaders(input.expected_revision),
   });
   return normalizeDetail(raw);
+}
+
+function revisionHeaders(expectedRevision?: number): HeadersInit | undefined {
+  return typeof expectedRevision === "number"
+    ? { "If-Match": `W/"${expectedRevision}"` }
+    : undefined;
 }
 
 export async function cancelMission(missionId: string) {
