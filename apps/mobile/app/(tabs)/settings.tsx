@@ -3,7 +3,6 @@ import {
   Bell,
   Bot,
   ChevronRight,
-  Cpu,
   Download,
   Languages,
   LockKeyhole,
@@ -224,10 +223,9 @@ export default function SettingsScreen() {
             />
           </SettingsSection>
 
-          <SettingsSection title="AI services">
+          <SettingsSection title="Voice services">
             {runtime.data ? (
               <>
-                <RuntimeRow icon={Cpu} label="Ollama" capability={runtime.data.ai} />
                 <RuntimeRow icon={Mic2} label="OpenAI STT" capability={runtime.data.speech_to_text} />
                 <RuntimeRow icon={Sparkles} label="OpenAI Realtime" capability={runtime.data.realtime} />
               </>
@@ -451,7 +449,7 @@ function SettingsRow({
   );
 }
 
-function RuntimeRow({ icon: Icon, label, capability }: { icon: typeof Cpu; label: string; capability: { status: string; model?: string; detail?: string | null } }) {
+function RuntimeRow({ icon: Icon, label, capability }: { icon: typeof Mic2; label: string; capability: { status: string; model?: string; detail?: string | null } }) {
   const available = capability.status === "available";
   const degraded = capability.status === "degraded";
   const statusColor = available ? colors.success : degraded ? colors.warning : colors.error;

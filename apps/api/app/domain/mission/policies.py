@@ -83,7 +83,7 @@ class MissionExecutionPolicy:
 
 
 class BasketPolicy:
-    """Deterministic safety boundary; an LLM can never override this result."""
+    """Deterministic safety boundary for every proposed basket."""
 
     def evaluate(self, contract: MissionContract, basket: BasketSnapshot) -> PolicyDecision:
         violations: list[PolicyViolation] = []

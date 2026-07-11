@@ -48,7 +48,7 @@
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSMicrophoneUsageDescription": "Allow Done to hear and transcribe your mission.",
-        "NSLocalNetworkUsageDescription": "Allow Done to connect to your local mission server and Ollama runtime.",
+        "NSLocalNetworkUsageDescription": "Allow Done to connect to your local mission server.",
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
         }

@@ -25,17 +25,15 @@ from .application.mission_service import (
     MissionServiceSettings,
     SpeechInputUnavailableError,
 )
-from .application.ports.ai import SpeechToTextPort, StructuredAIPort
+from .application.ports.ai import SpeechToTextPort
 from .application.ports.realtime import RealtimeSessionPort
 from .application.user_service import UserApplicationService
 from .config import (
     RealtimeSettings,
-    get_ai_settings,
     get_realtime_settings,
     get_transcription_settings,
 )
 from .database import PRODUCTS, Database
-from .infrastructure.ai.ollama import OllamaAdapter
 from .infrastructure.ai.openai_realtime import (
     OpenAIRealtimeAdapter,
     RealtimeUnavailableError,
@@ -129,7 +127,6 @@ def create_app(
     database_path: str | Path | None = None,
     *,
     mission_settings: MissionServiceSettings | None = None,
-    ai: StructuredAIPort | None = None,
     speech_to_text: SpeechToTextPort | None = None,
     realtime: RealtimeSessionPort | None = None,
     realtime_settings: RealtimeSettings | None = None,
@@ -142,12 +139,8 @@ def create_app(
     workflow = MissionWorkflow(database)
     user_service = UserApplicationService(SQLiteUserRepository(database))
     runtime_settings = mission_settings or MissionServiceSettings.from_env()
-    ai_settings = get_ai_settings()
     transcription_settings = get_transcription_settings()
     live_settings = realtime_settings or get_realtime_settings()
-    resolved_ai = ai
-    if runtime_settings.ai_enabled and resolved_ai is None:
-        resolved_ai = OllamaAdapter(ai_settings)
     resolved_speech = speech_to_text
     if runtime_settings.stt_enabled and resolved_speech is None:
         resolved_speech = OpenAITranscriptionAdapter(transcription_settings)
@@ -156,7 +149,6 @@ def create_app(
         resolved_realtime = OpenAIRealtimeAdapter(live_settings)
     mission_service = MissionApplicationService(
         workflow,
-        ai=resolved_ai,
         speech_to_text=resolved_speech,
         user_service=user_service,
         settings=runtime_settings,
@@ -173,8 +165,8 @@ def create_app(
         title="Done API",
         version="1.0.0",
         description=(
-            "Voice-driven, self-healing commerce missions with deterministic safety rules. "
-            "Ollama is optional; speech transcription uses the server-side OpenAI API."
+            "Voice-driven, self-healing commerce missions with deterministic safety rules "
+            "and server-side OpenAI speech services."
         ),
         lifespan=lifespan,
     )

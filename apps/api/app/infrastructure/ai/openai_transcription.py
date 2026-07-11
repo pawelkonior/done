@@ -203,7 +203,6 @@ class OpenAITranscriptionAdapter:
             language=language,
             duration_ms=max(0, round((perf_counter() - started) * 1_000)),
             model=self.settings.model,
-            segments=0,
         )
 
     async def health(self) -> STTHealth:

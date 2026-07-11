@@ -21,18 +21,13 @@ class FakeSpeech:
             ),
             language="pl",
             duration_ms=25,
-            audio_duration_seconds=2.4,
-            model="fake-whisper",
-            segments=1,
+            model="fake-transcription",
         )
 
     async def health(self) -> STTHealth:
         return STTHealth(
             status="available",
-            model="fake-whisper",
-            model_cached=True,
-            model_loaded=True,
-            ffmpeg=True,
+            model="fake-transcription",
         )
 
 
@@ -41,7 +36,6 @@ def runtime_client(tmp_path: Path) -> TestClient:
         create_app(
             tmp_path / "runtime.sqlite3",
             mission_settings=MissionServiceSettings(
-                ai_enabled=False,
                 stt_enabled=True,
                 inject_demo_failures=False,
                 demo_endpoints_enabled=False,
@@ -67,7 +61,7 @@ def test_voice_endpoint_transcribes_real_multipart(tmp_path: Path) -> None:
     body = response.json()
     assert body["mission"]["input_mode"] == "voice"
     assert body["transcription"]["text"].startswith("Jutro urodziny")
-    assert body["transcription"]["model"] == "fake-whisper"
+    assert body["transcription"]["model"] == "fake-transcription"
     assert response.headers["x-request-id"]
 
 
@@ -77,7 +71,7 @@ def test_capabilities_and_production_demo_gate(tmp_path: Path) -> None:
         reset = client.post("/v1/demo/reset")
 
     assert capabilities.status_code == 200
-    assert capabilities.json()["ai"]["status"] == "disabled"
+    assert "ai" not in capabilities.json()
     assert capabilities.json()["speech_to_text"]["status"] == "available"
     assert capabilities.json()["demo_endpoints"] is False
     assert reset.status_code == 404

@@ -13,7 +13,6 @@ integracji z prawdziwym sprzedawcą ani PSP.
 flowchart LR
     Mobile["Expo mobile/web"] --> API["Done FastAPI modular monolith"]
     API --> DB[("SQLite")]
-    API -. "optional structured inference" .-> Ollama["Local Ollama"]
     API -. "audio transcription" .-> OpenAI["OpenAI API"]
     API -. "ephemeral Realtime secret" .-> OpenAI
     Mobile -. "WebRTC with short-lived secret" .-> OpenAI
@@ -21,7 +20,8 @@ flowchart LR
 
 API jest jedynym publicznym backendem aplikacji. Standardowy klucz OpenAI
 pozostaje wyłącznie w procesie API; aplikacja otrzymuje tylko krótkotrwały sekret
-Realtime. Ollama jest zależnością lokalną, nie częścią publicznego kontraktu HTTP.
+Realtime. Tekstowy przepływ misji i wszystkie reguły bezpieczeństwa działają
+deterministycznie, bez zewnętrznego modelu.
 
 ## Moduły i reguła zależności
 
@@ -58,16 +58,15 @@ HTTP:
   i eksport;
 - `application/ports/mission.py` definiuje inbound `MissionWorkflowPort`, dzięki
   któremu application service nie zależy od konkretnej klasy workflow;
-- `application/ports/ai.py` definiuje provider-neutral porty
-  `StructuredAIPort` i `SpeechToTextPort` oraz ich DTO.
+- `application/ports/ai.py` definiuje provider-neutral port
+  `SpeechToTextPort` oraz DTO dla audio i transkrypcji;
 - `application/ports/realtime.py` definiuje `RealtimeSessionPort`; standardowy
   klucz dostawcy nie jest częścią portu mobilnego ani domeny.
 
-Application layer nie pozwala modelowi językowemu decydować o budżecie,
-uczestnikach, terminie, walucie ani hard constraints. Te wartości pochodzą z
-deterministycznego interpretera. Ollama może zmienić opisowy tytuł i obniżyć
-confidence; wynik niepoprawny składniowo lub semantycznie przechodzi na
-deterministyczny fallback.
+Application layer wyznacza budżet, uczestników, termin, walutę, tytuł i hard
+constraints wyłącznie przez deterministyczny interpreter. OpenAI Transcription
+dostarcza tylko tekst nagrania, a funkcja Realtime przekazuje transcript do tego
+samego use case'u; żaden model nie tworzy ani nie zatwierdza kontraktu misji.
 
 ### Presentation
 
@@ -84,8 +83,6 @@ request ID i mapowanie wyjątków na statusy HTTP.
 
 - `Database` zarządza połączeniami SQLite, schematem i seedem;
 - `SQLiteUserRepository` implementuje port persistence kontekstu użytkownika;
-- `OllamaAdapter` implementuje structured output, semantic validation,
-  allowlistę tool calls i health checks;
 - `OpenAITranscriptionAdapter` wysyła zwalidowane audio do serwerowego endpointu
   OpenAI Audio API z modelem `gpt-4o-transcribe`;
 - `OpenAIRealtimeAdapter` tworzy krótko żyjący sekret WebRTC, wiąże go z
@@ -132,26 +129,28 @@ Ustawienia są snapshotowane do nowej misji jako `MissionExecutionPolicy`:
 - safe recovery, preferred merchants i default constraints trafiają do
   kontraktu misji.
 
-### Inference services
+### OpenAI Transcription
 
-Jest supporting contextem za portami application layer:
+Jest opcjonalnym supporting contextem za `SpeechToTextPort`:
 
-- Ollama: JSON Schema structured output, stały seed/temperature, kontrolowana
-  współbieżność, semantic fallback i allowlista narzędzi;
-- OpenAI STT: serwerowy multipart do `gpt-4o-transcribe`, walidacja formatu i
-  rozmiaru oraz bezpieczne redagowanie błędów dostawcy.
+- API wysyła zwalidowany multipart bezpośrednio do OpenAI Audio API z modelem
+  `gpt-4o-transcribe`;
+- adapter ogranicza rozmiar i format pliku, współbieżność oraz czas żądania, a
+  błędy dostawcy redaguje przed zwróceniem ich klientowi.
 
-Adaptery są opcjonalne. Wyłączenie AI nie blokuje misji tekstowych.
-Wyłączenie STT blokuje wyłącznie prawdziwy multipart audio; JSON na endpointcie
-voice pozostaje dostępny jako ścieżka kompatybilności/accessibility.
+Wyłączenie STT blokuje wyłącznie prawdziwy multipart audio. Misje tekstowe są
+zawsze przetwarzane lokalnie i deterministycznie, a JSON na endpointcie voice
+pozostaje dostępny jako ścieżka kompatybilności/accessibility.
 
 ### Live Voice Intake
 
 Live Voice jest supporting contextem za `RealtimeSessionPort`. Serwer używa
-standardowego klucza wyłącznie do `POST /v1/realtime/client_secrets`. Klient
-łączy się z OpenAI przez WebRTC sekretem krótkotrwałym; klucz standardowy nie
-jest bundlowany. Sesja używa `gpt-realtime-2`, głosu `marin`, transkrypcji
-`gpt-realtime-whisper` i jednej funkcji `submit_mission`.
+standardowego klucza wyłącznie do wywołania endpointu OpenAI
+`POST /v1/realtime/client_secrets`; Done udostępnia klientowi własny endpoint
+`POST /v1/realtime/client-secret`. Klient łączy się z OpenAI przez WebRTC
+sekretem krótkotrwałym; klucz standardowy nie jest bundlowany. Sesja używa
+`gpt-realtime-2`, głosu `marin`, transkrypcji `gpt-realtime-whisper` i jednej
+funkcji `submit_mission`.
 
 Funkcja nie omija domeny. Jej transcript trafia do
 `MissionApplicationService`, deterministycznego interpretera,
@@ -249,7 +248,6 @@ nie pełnym systemem migracji.
 HTTP JSON
 → MissionApplicationService
 → deterministic interpretation
-→ optional Ollama enrichment/fallback
 → user execution-policy snapshot
 → MissionWorkflow + BasketPolicy + SQLite transaction
 → MissionDetail response
@@ -275,9 +273,9 @@ po rosnącym cursorze.
 
 ## Decyzje architektoniczne
 
-1. **Safety first:** deterministyczna polityka jest nadrzędna wobec AI.
+1. **Safety first:** interpretacja tekstu i polityki bezpieczeństwa są deterministyczne.
 2. **Local core:** SQLite i deterministyczny workflow działają bez zewnętrznego SaaS.
-3. **Optional inference:** brak AI nie blokuje podstawowego use-case'u.
+3. **Optional voice services:** brak OpenAI nie blokuje tekstowego use case'u.
 4. **Server-only speech credentials:** standardowy klucz OpenAI nie trafia do aplikacji.
 5. **Single deployable API:** moduły domenowe pozostają w jednym procesie i
    jednej transakcyjnej bazie.
@@ -296,7 +294,7 @@ po rosnącym cursorze.
 - brak formalnych migracji schematu;
 - brak encryption-at-rest, rate limiting i aplikacyjnego audit logu dostępu;
 - runtime metrics są metrykami demonstracyjnymi, nie systemem observability;
-- `GET /health` nie sprawdza Ollama ani OpenAI;
+- `GET /health` nie sprawdza opcjonalnych usług OpenAI;
 - profile i settings są trwałe, ale nie są powiązane z uwierzytelnioną sesją.
 
 Realne commerce integrations muszą zostać dodane jako porty application layer,

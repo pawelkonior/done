@@ -1,21 +1,19 @@
 """Application use cases for creating missions from text or audio.
 
 This module is the orchestration boundary between the mission domain workflow
-and optional inference adapters.  The LLM may improve descriptive metadata,
-but it is deliberately not authoritative for money, dates or hard policies.
+and server-side speech transcription. Mission interpretation and safety rules
+remain deterministic.
 """
 
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass
-from datetime import UTC, datetime
 import os
 from typing import Any
 
 from ..domain.common import Money
 from ..domain.mission.policies import MissionExecutionPolicy
-from .ports.ai import AudioPayload, SpeechToTextPort, StructuredAIPort
+from .ports.ai import AudioPayload, SpeechToTextPort
 from .ports.mission import MissionWorkflowPort
 from .user_service import UserApplicationService
 
@@ -34,7 +32,6 @@ def _env_bool(name: str, default: bool) -> bool:
 
 @dataclass(frozen=True, slots=True)
 class MissionServiceSettings:
-    ai_enabled: bool = False
     stt_enabled: bool = False
     inject_demo_failures: bool = True
     demo_endpoints_enabled: bool = True
@@ -42,7 +39,6 @@ class MissionServiceSettings:
     @classmethod
     def from_env(cls) -> "MissionServiceSettings":
         return cls(
-            ai_enabled=_env_bool("DONE_AI_ENABLED", False),
             stt_enabled=_env_bool("DONE_STT_ENABLED", False),
             inject_demo_failures=_env_bool("DONE_DEMO_FAILURES_ENABLED", True),
             demo_endpoints_enabled=_env_bool("DONE_DEMO_ENDPOINTS_ENABLED", True),
@@ -64,13 +60,11 @@ class MissionApplicationService:
         self,
         workflow: MissionWorkflowPort,
         *,
-        ai: StructuredAIPort | None = None,
         speech_to_text: SpeechToTextPort | None = None,
         user_service: UserApplicationService | None = None,
         settings: MissionServiceSettings | None = None,
     ) -> None:
         self.workflow = workflow
-        self.ai = ai
         self.speech_to_text = speech_to_text
         self.user_service = user_service
         self.settings = settings or MissionServiceSettings.from_env()
@@ -90,35 +84,6 @@ class MissionApplicationService:
         interpretation = self.workflow.interpret_transcript(
             safe_transcript, locale, timezone
         )
-        interpretation["inference_provider"] = "deterministic"
-
-        if self.settings.ai_enabled and self.ai is not None:
-            result = await self.ai.extract_mission(
-                safe_transcript,
-                locale=locale,
-                timezone=timezone,
-                now=datetime.now(UTC),
-            )
-            draft = result.value
-
-            # A model can improve a label, never a safety-critical field.  The
-            # deterministic interpreter remains authoritative for participant
-            # count, budget, deadline, currency and all hard constraints.
-            supported_categories = {
-                "cake",
-                "decorations",
-                "drinks",
-                "snacks",
-                "tableware",
-            }
-            if set(draft.categories) & supported_categories and draft.title.strip():
-                interpretation["title"] = draft.title.strip()
-            interpretation["confidence"] = min(
-                float(interpretation["confidence"]), float(draft.confidence)
-            )
-            interpretation["inference_provider"] = result.provider
-            interpretation["inference_model"] = result.model
-            interpretation["inference_fallback_reason"] = result.fallback_reason
 
         execution_policy = MissionExecutionPolicy()
         if self.user_service is not None:
@@ -188,47 +153,27 @@ class MissionApplicationService:
         return detail
 
     async def capabilities(self) -> dict[str, Any]:
-        ai_health: Any = {
-            "status": "disabled",
-            "provider": "ollama",
-            "detail": "Set DONE_AI_ENABLED=true to enable local inference.",
-        }
         stt_health: Any = {
             "status": "disabled",
             "detail": "Set DONE_STT_ENABLED=true to enable OpenAI speech recognition.",
         }
 
-        tasks: list[tuple[str, Any]] = []
-        if self.settings.ai_enabled and self.ai is not None:
-            tasks.append(("ai", self.ai.health()))
         if self.settings.stt_enabled and self.speech_to_text is not None:
-            tasks.append(("stt", self.speech_to_text.health()))
-        if tasks:
-            results = await asyncio.gather(
-                *(task for _, task in tasks), return_exceptions=True
-            )
-            for (kind, _), result in zip(tasks, results, strict=True):
-                if isinstance(result, Exception):
-                    value: Any = {
-                        "status": "unavailable",
-                        "detail": f"{type(result).__name__}: {result}",
-                    }
-                else:
-                    value = result.model_dump()
-                if kind == "ai":
-                    ai_health = value
-                else:
-                    stt_health = value
+            try:
+                stt_health = (await self.speech_to_text.health()).model_dump()
+            except Exception as exc:  # noqa: BLE001 - health must remain best-effort
+                stt_health = {
+                    "status": "unavailable",
+                    "detail": f"{type(exc).__name__}: {exc}",
+                }
 
         return {
-            "ai": ai_health,
             "speech_to_text": stt_health,
             "demo_failures": self.settings.inject_demo_failures,
             "demo_endpoints": self.settings.demo_endpoints_enabled,
         }
 
     async def aclose(self) -> None:
-        for adapter in (self.ai, self.speech_to_text):
-            closer = getattr(adapter, "aclose", None)
-            if closer is not None:
-                await closer()
+        closer = getattr(self.speech_to_text, "aclose", None)
+        if closer is not None:
+            await closer()

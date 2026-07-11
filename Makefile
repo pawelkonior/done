@@ -1,4 +1,4 @@
-.PHONY: setup dev api stt mobile test build doctor reset
+.PHONY: setup dev api mobile test build doctor reset
 
 setup:
 	npm run setup
@@ -8,9 +8,6 @@ dev:
 
 api:
 	npm run api
-
-stt:
-	npm run stt
 
 mobile:
 	npm run mobile

@@ -138,7 +138,6 @@ export interface VoiceTranscription {
   text: string;
   language?: string;
   model?: string;
-  duration_seconds?: number;
 }
 
 export interface MissionListFilters {
@@ -253,15 +252,10 @@ export interface RuntimeCapability {
   status: string;
   provider?: string;
   model?: string;
-  model_available?: boolean;
-  model_loaded?: boolean;
-  model_cached?: boolean;
-  ffmpeg?: boolean;
   detail?: string | null;
 }
 
 export interface RuntimeCapabilities {
-  ai: RuntimeCapability;
   speech_to_text: RuntimeCapability;
   realtime: RuntimeCapability;
   demo_failures: boolean;
