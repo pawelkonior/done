@@ -18,7 +18,7 @@ function tone(event: LoopEvent): string {
 function timeOf(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleTimeString("pl-PL", { hour12: false });
+  return date.toLocaleTimeString("en-GB", { hour12: false });
 }
 
 export function createTicker(container: HTMLElement): Ticker {

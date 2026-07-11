@@ -5,34 +5,30 @@ export interface ReplayStep extends Omit<LoopEvent, "created_at"> {
   delay: number;
 }
 
-/**
- * Scripted mission used when the API has no data (or is offline), so the
- * loop can always be demonstrated. It mirrors the seeded demo scenario:
- * birthday mission, price-change feedback, replan, PSP reroute, order.
- */
+/** A complete sample journey for presenting the dashboard without a live API. */
 export const REPLAY_SCRIPT: readonly ReplayStep[] = [
-  { type: "mission.created", title: "Misja utworzona z komendy głosowej", severity: "info", delay: 1600 },
-  { type: "voice.transcribed", title: "„Urodziny Zosi, sobota, 12 dzieci, do 250 zł, bez orzechów”", severity: "info", delay: 2000 },
-  { type: "intent.parsed", title: "Budżet, deadline i ograniczenia odczytane deterministycznie", severity: "info", delay: 1700 },
-  { type: "contract.created", title: "Kontrakt v1 · 250 PLN · nut-free · sobota 12:00", severity: "info", delay: 1900 },
-  { type: "market.snapshot_captured", title: "Snapshot rynku: 14 ofert od 3 merchantów", severity: "info", delay: 1900 },
-  { type: "basket.optimized", title: "CP-SAT: 7× BUY_NOW, 1× WAIT · 128,41 PLN", severity: "info", delay: 2300 },
-  { type: "policy.validated", title: "BasketPolicy: budżet, alergeny i termin spełnione", severity: "info", delay: 1600 },
-  { type: "approval.requested", title: "Koszyk czeka na akceptację użytkownika", severity: "info", delay: 2600 },
-  { type: "price.changed", title: "Cena precli +20% — sygnał wraca do modelu", severity: "warning", delay: 2100 },
-  { type: "portfolio.replanned", title: "Replan: krakersy zastępują precle w tym samym budżecie", severity: "info", delay: 2200 },
-  { type: "approval.superseded", title: "Poprzednia zgoda unieważniona po replanie", severity: "warning", delay: 1900 },
-  { type: "approval.resolved", title: "Użytkownik zatwierdził 128,41 PLN", severity: "info", delay: 2000 },
-  { type: "execution.started", title: "Start zakupu u Party Market", severity: "info", delay: 1500 },
-  { type: "inventory.unavailable", title: "Mini precle niedostępne — start recovery", severity: "warning", delay: 1900 },
-  { type: "product.replaced", title: "Bezpieczny zamiennik dobrany w budżecie (nut-free)", severity: "info", delay: 1700 },
-  { type: "inventory.reserved", title: "Stock zarezerwowany u merchanta", severity: "info", delay: 1400 },
-  { type: "payment.attempted", title: "Płatność tokenem karty przez PSP_A", severity: "info", delay: 1400 },
-  { type: "payment.declined", title: "PSP_A: soft decline (DO_NOT_HONOR)", severity: "warning", delay: 1700 },
-  { type: "payment.rerouted", title: "Przekierowanie płatności do PSP_B", severity: "info", delay: 1400 },
-  { type: "payment.authorized", title: "PSP_B autoryzował 128,41 PLN", severity: "info", delay: 1700 },
-  { type: "order.confirmed", title: "Zamówienie potwierdzone · dostawa w piątek", severity: "info", delay: 2000 },
-  { type: "mission.completed", title: "Misja ukończona · 121,59 PLN pod budżetem · 2 awarie odzyskane", severity: "info", delay: 6500 },
+  { type: "mission.created", title: "Mission created from a voice command", severity: "info", delay: 1600 },
+  { type: "voice.transcribed", title: "Maya's birthday, Saturday, 12 children, up to 250 PLN, nut-free", severity: "info", delay: 2000 },
+  { type: "intent.parsed", title: "Budget, deadline and constraints parsed deterministically", severity: "info", delay: 1700 },
+  { type: "contract.created", title: "Contract v1 · 250 PLN · nut-free · Saturday 12:00", severity: "info", delay: 1900 },
+  { type: "market.snapshot_captured", title: "Market snapshot: 14 offers from 3 merchants", severity: "info", delay: 1900 },
+  { type: "basket.optimized", title: "CP-SAT selected a basket for 128.41 PLN", severity: "info", delay: 2300 },
+  { type: "policy.validated", title: "Budget, allergy and deadline policies satisfied", severity: "info", delay: 1600 },
+  { type: "approval.requested", title: "Basket is waiting for user approval", severity: "info", delay: 2600 },
+  { type: "price.changed", title: "Pretzel price rose by 20% — feedback returns to the model", severity: "warning", delay: 2100 },
+  { type: "portfolio.replanned", title: "Replan replaces pretzels with crackers within the same budget", severity: "info", delay: 2200 },
+  { type: "approval.superseded", title: "Previous approval invalidated after the replan", severity: "warning", delay: 1900 },
+  { type: "approval.resolved", title: "User approved 128.41 PLN", severity: "info", delay: 2000 },
+  { type: "execution.started", title: "Purchase started at Party Market", severity: "info", delay: 1500 },
+  { type: "inventory.unavailable", title: "Mini pretzels unavailable — recovery started", severity: "warning", delay: 1900 },
+  { type: "product.replaced", title: "A safe nut-free replacement was selected", severity: "info", delay: 1700 },
+  { type: "inventory.reserved", title: "Inventory reserved with the merchant", severity: "info", delay: 1400 },
+  { type: "payment.attempted", title: "Tokenised card payment sent to PSP_A", severity: "info", delay: 1400 },
+  { type: "payment.declined", title: "PSP_A returned a soft decline", severity: "warning", delay: 1700 },
+  { type: "payment.rerouted", title: "Payment rerouted to PSP_B", severity: "info", delay: 1400 },
+  { type: "payment.authorized", title: "PSP_B authorised 128.41 PLN", severity: "info", delay: 1700 },
+  { type: "order.confirmed", title: "Order confirmed · delivery on Friday", severity: "info", delay: 2000 },
+  { type: "mission.completed", title: "Mission completed · 121.59 PLN under budget · 2 recoveries", severity: "info", delay: 6500 },
 ];
 
-export const REPLAY_MISSION_TITLE = "Urodziny Zosi — misja demonstracyjna";
+export const REPLAY_MISSION_TITLE = "Maya's birthday - sample mission";

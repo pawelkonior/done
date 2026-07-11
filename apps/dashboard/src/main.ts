@@ -1,6 +1,7 @@
 import "./styles.css";
 
-import { fetchEvents, fetchMissions } from "./api";
+import { fetchEvents, fetchMissionDetail, fetchMissions } from "./api";
+import { createDetailPanel } from "./detail";
 import { createGraph } from "./graph";
 import { EVENT_NODE, FEEDBACK_EVENTS, WARN_EVENTS, WARN_SEVERITIES } from "./mapping";
 import { REPLAY_MISSION_TITLE, REPLAY_SCRIPT } from "./replay";
@@ -14,6 +15,7 @@ type Mode = "connecting" | "live" | "replay";
 
 const graph = createGraph(document.getElementById("graph")!);
 const ticker = createTicker(document.getElementById("ticker")!);
+const detailPanel = createDetailPanel(document.getElementById("detail-panel")!);
 const missionTitleEl = document.getElementById("mission-title")!;
 const missionStatusEl = document.getElementById("mission-status")!;
 const modeBadgeEl = document.getElementById("mode-badge")!;
@@ -23,21 +25,22 @@ let mode: Mode = "connecting";
 let missionId: string | null = null;
 let cursor = 0;
 let eventsInFlight = false;
+let detailInFlight = false;
 let replayTimer: number | undefined;
 /** Bumped on every view reset so stale in-flight responses are discarded. */
 let generation = 0;
 
-function setMode(next: Mode, label: string): void {
+function setMode(next: Mode, text: string): void {
   mode = next;
   modeBadgeEl.dataset.mode = next;
-  modeBadgeEl.textContent = label;
+  modeBadgeEl.textContent = text;
 }
 
 function setMission(title: string, status: string | null): void {
   missionTitleEl.textContent = title;
   if (status) {
     missionStatusEl.hidden = false;
-    missionStatusEl.textContent = status;
+    missionStatusEl.textContent = status.replaceAll("_", " ");
     missionStatusEl.dataset.status = status;
   } else {
     missionStatusEl.hidden = true;
@@ -45,9 +48,7 @@ function setMission(title: string, status: string | null): void {
 }
 
 function dispatch(event: LoopEvent): void {
-  if (FEEDBACK_EVENTS.has(event.type)) {
-    graph.flashFeedback();
-  }
+  if (FEEDBACK_EVENTS.has(event.type)) graph.flashFeedback();
   const node = EVENT_NODE[event.type];
   if (node) {
     const warn = WARN_EVENTS.has(event.type) || WARN_SEVERITIES.has(event.severity);
@@ -59,11 +60,10 @@ function dispatch(event: LoopEvent): void {
 function resetView(): void {
   graph.reset();
   ticker.reset();
+  detailPanel.reset();
   cursor = 0;
   generation += 1;
 }
-
-// ---------------------------------------------------------------- replay
 
 function stopReplay(): void {
   window.clearTimeout(replayTimer);
@@ -72,9 +72,8 @@ function stopReplay(): void {
 
 function scheduleReplayStep(index: number): void {
   const step = REPLAY_SCRIPT[index % REPLAY_SCRIPT.length];
-  if (index > 0 && index % REPLAY_SCRIPT.length === 0) {
-    resetView();
-  }
+  if (index > 0 && index % REPLAY_SCRIPT.length === 0) resetView();
+  detailPanel.showReplay(step.type);
   dispatch({ ...step, created_at: new Date().toISOString() });
   replayTimer = window.setTimeout(() => scheduleReplayStep(index + 1), step.delay);
 }
@@ -86,17 +85,17 @@ function enterReplay(reason: string): void {
   resetView();
   setMode("replay", reason);
   setMission(REPLAY_MISSION_TITLE, null);
+  detailPanel.showReplay("mission.created");
   scheduleReplayStep(0);
 }
-
-// ---------------------------------------------------------------- live
 
 function enterLive(id: string, title: string, status: string): void {
   if (missionId !== id) {
     stopReplay();
     missionId = id;
     resetView();
-    void pollEvents(); // Fill the new mission's history without waiting a tick.
+    void pollEvents();
+    void pollDetail();
   }
   setMode("live", "live");
   setMission(title, status);
@@ -108,46 +107,56 @@ async function pollEvents(): Promise<void> {
   const requestGeneration = generation;
   try {
     const page = await fetchEvents(missionId, cursor);
-    if (requestGeneration !== generation) {
-      return; // The view switched missions while this request was in flight.
-    }
+    if (requestGeneration !== generation) return;
     cursor = page.cursor;
-    for (const event of page.events) {
-      dispatch(event);
-    }
-    missionStatusEl.textContent = page.mission_status;
+    for (const event of page.events) dispatch(event);
+    missionStatusEl.textContent = page.mission_status.replaceAll("_", " ");
     missionStatusEl.dataset.status = page.mission_status;
   } catch {
-    // A transient failure keeps the last known state; mission polling
-    // decides whether to fall back to replay.
+    // Mission polling determines whether the dashboard should fall back to replay.
   } finally {
     eventsInFlight = false;
+  }
+}
+
+async function pollDetail(): Promise<void> {
+  if (mode !== "live" || !missionId || detailInFlight) return;
+  detailInFlight = true;
+  const requestGeneration = generation;
+  try {
+    const detail = await fetchMissionDetail(missionId);
+    if (requestGeneration !== generation) return;
+    setMission(detail.mission.title, detail.mission.status);
+    detailPanel.update(detail);
+  } catch {
+    // The graph and event ticker remain available if this read-only request fails.
+  } finally {
+    detailInFlight = false;
   }
 }
 
 async function pollMissions(): Promise<void> {
   try {
     const missions = await fetchMissions();
-    // Follow whatever the system touched last (the list is sorted by
-    // updated_at). A mission that just completed stays on screen instead
-    // of losing the finale to a stale clarification draft.
+    // Follow the most recently touched mission, keeping a completed finale visible.
     const followed = missions[0];
     if (followed) {
       enterLive(followed.id, followed.title, followed.status);
     } else {
-      enterReplay("replay · brak misji");
+      enterReplay("replay · no missions");
     }
   } catch {
     enterReplay("replay · API offline");
   }
 }
 
-// ---------------------------------------------------------------- boot
-
 window.setInterval(() => {
-  clockEl.textContent = new Date().toLocaleTimeString("pl-PL", { hour12: false });
+  clockEl.textContent = new Date().toLocaleTimeString("en-GB", { hour12: false });
 }, 1000);
 
 void pollMissions();
 window.setInterval(() => void pollMissions(), MISSIONS_POLL_MS);
-window.setInterval(() => void pollEvents(), EVENTS_POLL_MS);
+window.setInterval(() => {
+  void pollEvents();
+  void pollDetail();
+}, EVENTS_POLL_MS);

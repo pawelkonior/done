@@ -8,13 +8,13 @@ export interface NodeSpec {
 }
 
 export const NODES: readonly NodeSpec[] = [
-  { id: "intake", num: 1, name: "Intake", sub: "głos / tekst" },
-  { id: "contract", num: 2, name: "Kontrakt", sub: "budżet · deadline · towary" },
-  { id: "snapshot", num: 3, name: "Snapshot", sub: "oferty sklepów" },
+  { id: "intake", num: 1, name: "Intake", sub: "voice / text" },
+  { id: "contract", num: 2, name: "Contract", sub: "budget · deadline · items" },
+  { id: "snapshot", num: 3, name: "Snapshot", sub: "store offers" },
   { id: "model", num: 4, name: "Model", sub: "CP-SAT · buy / wait" },
-  { id: "guardrails", num: 5, name: "Guardrails", sub: "polityki · approval" },
-  { id: "purchase", num: 6, name: "Zakup", sub: "karta (token) · PSP" },
-  { id: "result", num: 7, name: "Wynik", sub: "order / recovery" },
+  { id: "guardrails", num: 5, name: "Guardrails", sub: "policy · approval" },
+  { id: "purchase", num: 6, name: "Purchase", sub: "tokenised card · PSP" },
+  { id: "result", num: 7, name: "Result", sub: "order · recovery" },
 ];
 
 /** Every mission event type emitted by apps/api/app/workflow.py. */

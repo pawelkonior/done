@@ -1,4 +1,4 @@
-import type { ApiEvent, MissionSummary } from "./types";
+import type { ApiEvent, MissionDetail, MissionSummary } from "./types";
 
 const BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://127.0.0.1:8001";
 
@@ -26,4 +26,8 @@ export async function fetchMissions(): Promise<MissionSummary[]> {
 
 export async function fetchEvents(missionId: string, afterId: number): Promise<EventsPage> {
   return get<EventsPage>(`/v1/missions/${missionId}/events?after_id=${afterId}`);
+}
+
+export async function fetchMissionDetail(missionId: string): Promise<MissionDetail> {
+  return get<MissionDetail>(`/v1/missions/${missionId}`);
 }
