@@ -161,7 +161,7 @@ export function paymentIncident(detail: MissionDetail): { title: string; body: s
   const failedLine = declined.product_id ? ` for ${productName(declined.product_id)}` : "";
   if (declined.simulated) {
     return {
-      title: "Simulated line-item payment failure",
+      title: declined.product_id ? "Simulated line-item payment failure" : "Simulated batch payment failure",
       body: `${failedAttempt}${failedLine}. This is a dashboard-only simulation: it does not change the API, reservation or order.`,
       tone: "error",
     };

@@ -310,17 +310,9 @@ html, body {
 
 .topology-steps {
   display: grid;
-  grid-template-columns: repeat(5, minmax(165px, 1fr));
+  grid-template-columns: repeat(7, minmax(165px, 1fr));
   gap: 9px;
-  min-width: 875px;
-}
-
-.topology-outcomes {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(260px, 1fr));
-  gap: 10px;
-  min-width: 540px;
-  margin-left: 40%;
+  min-width: 1225px;
 }
 
 .topology-node {

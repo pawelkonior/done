@@ -8,6 +8,7 @@ import { EVENT_NODE, FEEDBACK_EVENTS, WARN_EVENTS, WARN_SEVERITIES } from "./map
 import { createPortfolioFlow } from "./portfolio";
 import {
   buildCheckoutRoutes,
+  rerouteDeclinedBatch,
   storeBatchDetails,
   storeRouteDetails,
   type CheckoutRoute,
@@ -147,12 +148,18 @@ function baseNodeDetails(detail: MissionDetail, routes: CheckoutRoute[]): NodeDe
   snapshot.push(...storeRouteDetails(routes));
   if (snapshot.length > 0) details.snapshot = snapshot;
   if (checkoutPhase !== "idle") {
-    const event = checkoutPhase === "batch1_purchased" ? "payment.authorized" : checkoutPhase === "batch2_declined" ? "payment.declined" : "payment.attempted";
+    const event = checkoutPhase === "batch1_purchased"
+      ? "payment.authorized"
+      : checkoutPhase === "batch2_declined"
+        ? "payment.declined"
+        : checkoutPhase === "batch2_rerouted"
+          ? "portfolio.replanned"
+          : "payment.attempted";
     details.model = [{
       title: `Projection recalculated · revision ${checkoutRevision}`,
       meta: `Hook fired from ${event}`,
       description: "The dashboard refreshes after this event and continues its one-second live poll.",
-      tone: checkoutPhase === "batch2_declined" ? "warn" : "ok",
+      tone: checkoutPhase === "batch2_declined" || checkoutPhase === "batch2_rerouted" ? "warn" : "ok",
     }];
   }
   if (detail.order) {
@@ -169,24 +176,42 @@ function baseNodeDetails(detail: MissionDetail, routes: CheckoutRoute[]): NodeDe
 function checkoutPresentation(detail: MissionDetail, routes: CheckoutRoute[]): MissionDetail {
   if (checkoutPhase === "idle" || !detail.basket) return detail;
 
-  const totalFor = (batch: 1 | 2): number => routes
+  const totalFor = (batch: number): number => routes
     .find((route) => route.batch === batch)
     ?.items.reduce((sum, item) => sum + item.line_total, 0) ?? 0;
   const firstStore = routes.find((route) => route.batch === 1)?.storeName ?? "store group 1";
   const secondStore = routes.find((route) => route.batch === 2)?.storeName ?? "store group 2";
+  const retryPayments: MissionDetail["payment_attempts"] = routes
+    .filter((route) => route.batch !== 1)
+    .map((route) => ({
+      provider: `PSP_SIM / ${route.storeName}`,
+      amount: totalFor(route.batch),
+      currency: detail.basket!.currency,
+      status: "attempted",
+      decline_code: null,
+      simulated: true,
+    }));
   const payments: MissionDetail["payment_attempts"] = checkoutPhase === "batch1_processing"
     ? [{ provider: `PSP_SIM / ${firstStore}`, amount: totalFor(1), currency: detail.basket.currency, status: "attempted", decline_code: null, simulated: true }]
     : checkoutPhase === "batch1_purchased"
       ? [{ provider: `PSP_SIM / ${firstStore}`, amount: totalFor(1), currency: detail.basket.currency, status: "authorized", decline_code: null, simulated: true }]
-      : [
-          { provider: `PSP_SIM / ${firstStore}`, amount: totalFor(1), currency: detail.basket.currency, status: "authorized", decline_code: null, simulated: true },
-          { provider: `PSP_SIM / ${secondStore}`, amount: totalFor(2), currency: detail.basket.currency, status: "declined", decline_code: "SIMULATED_BATCH_2_DECLINE", simulated: true },
-        ];
+      : checkoutPhase === "batch2_rerouted"
+        ? [
+            { provider: `PSP_SIM / ${firstStore}`, amount: totalFor(1), currency: detail.basket.currency, status: "authorized", decline_code: null, simulated: true },
+            { provider: "PSP_SIM / Smyk", amount: retryPayments.reduce((sum, payment) => sum + payment.amount, 0), currency: detail.basket.currency, status: "declined", decline_code: "SIMULATED_BATCH_2_DECLINE", simulated: true },
+            ...retryPayments,
+          ]
+        : [
+            { provider: `PSP_SIM / ${firstStore}`, amount: totalFor(1), currency: detail.basket.currency, status: "authorized", decline_code: null, simulated: true },
+            { provider: `PSP_SIM / ${secondStore}`, amount: totalFor(2), currency: detail.basket.currency, status: "declined", decline_code: "SIMULATED_BATCH_2_DECLINE", simulated: true },
+          ];
   const status = checkoutPhase === "batch1_processing"
     ? "checkout_in_progress"
     : checkoutPhase === "batch1_purchased"
       ? "batch_1_purchased"
-      : "payment_retry_required";
+      : checkoutPhase === "batch2_rerouted"
+        ? "replacement_portfolio_processing"
+        : "payment_retry_required";
 
   return {
     ...detail,
@@ -197,7 +222,8 @@ function checkoutPresentation(detail: MissionDetail, routes: CheckoutRoute[]): M
 }
 
 function renderWorkflow(detail: MissionDetail): void {
-  const routes = buildCheckoutRoutes(detail.basket?.items ?? [], catalogOffers);
+  const plannedRoutes = buildCheckoutRoutes(detail.basket?.items ?? [], catalogOffers);
+  const routes = checkoutPhase === "batch2_rerouted" ? rerouteDeclinedBatch(plannedRoutes) : plannedRoutes;
   const portfolio = portfolioFlow.update(detail, routes, checkoutPhase);
   graph.setCartSnapshot({
     status: detail.mission.status,
@@ -359,6 +385,23 @@ simulateBatchTwoButton.addEventListener("click", () => {
       });
       if (latestDetail) renderDetail(latestDetail);
     }, 3000),
+    window.setTimeout(() => {
+      checkoutPhase = "batch2_rerouted";
+      checkoutRevision = 3;
+      dispatch({
+        type: "portfolio.replanned",
+        title: "Simulation: new portfolio split the failed group across Party&Co and Fresh Day",
+        severity: "info",
+        created_at: new Date().toISOString(),
+      });
+      dispatch({
+        type: "payment.attempted",
+        title: "Simulation: replacement-store payment retries started",
+        severity: "info",
+        created_at: new Date().toISOString(),
+      });
+      if (latestDetail) renderDetail(latestDetail);
+    }, 4600),
   ];
 });
 

@@ -61,8 +61,6 @@ export function createGraph(container: HTMLElement): Graph {
   const nodes = new Map<NodeId, NodeParts>();
   const steps = document.createElement("section");
   steps.className = "topology-steps";
-  const outcomes = document.createElement("section");
-  outcomes.className = "topology-outcomes";
 
   for (const spec of NODES) {
     const root = document.createElement("article");
@@ -84,7 +82,7 @@ export function createGraph(container: HTMLElement): Graph {
     details.className = "topology-node-details";
     root.append(header, subtitle, details);
     nodes.set(spec.id, { root, subtitle, details });
-    (spec.num <= 5 ? steps : outcomes).append(root);
+    steps.append(root);
   }
 
   const map = document.createElement("section");
@@ -136,7 +134,7 @@ export function createGraph(container: HTMLElement): Graph {
   const feedback = document.createElement("div");
   feedback.className = "topology-feedback";
   feedback.textContent = "Feedback loop: prices, inventory and payment outcomes recalculate the cart projection.";
-  container.append(steps, map, outcomes, feedback);
+  container.append(steps, map, feedback);
 
   let feedbackTimer: number | undefined;
   let topology: ProductStoreRoute[] = [];

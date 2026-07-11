@@ -5,10 +5,11 @@ export type CheckoutSimulationPhase =
   | "idle"
   | "batch1_processing"
   | "batch1_purchased"
-  | "batch2_declined";
+  | "batch2_declined"
+  | "batch2_rerouted";
 
 export interface CheckoutRoute {
-  batch: 1 | 2;
+  batch: 1 | 2 | 3;
   storeId: string;
   storeName: string;
   endpoint: string;
@@ -23,6 +24,11 @@ interface Store {
 const FALLBACK_STORES: readonly Store[] = [
   { id: "store-delio", name: "delio" },
   { id: "store-smyk", name: "Smyk" },
+];
+
+const REROUTE_STORES: readonly Store[] = [
+  { id: "store-partyco", name: "Party&Co" },
+  { id: "store-freshday", name: "Fresh Day" },
 ];
 
 function selectStores(offers: CatalogOffer[]): Store[] {
@@ -44,6 +50,24 @@ export function buildCheckoutRoutes(items: BasketItem[], offers: CatalogOffer[])
     endpoint: `GET /v1/catalog/offers?store_id=${store.id}&available=true`,
     items: index === 0 ? items.slice(0, split) : items.slice(split),
   }));
+}
+
+/** Splits a declined store group across two new stores after a replanning event. */
+export function rerouteDeclinedBatch(routes: CheckoutRoute[]): CheckoutRoute[] {
+  const firstBatch = routes.find((route) => route.batch === 1);
+  const declinedBatch = routes.find((route) => route.batch === 2);
+  if (!firstBatch || !declinedBatch || declinedBatch.items.length === 0) return routes;
+  const split = Math.ceil(declinedBatch.items.length / 2);
+  return [
+    firstBatch,
+    ...REROUTE_STORES.map((store, index) => ({
+      batch: (index === 0 ? 2 : 3) as 2 | 3,
+      storeId: store.id,
+      storeName: store.name,
+      endpoint: `GET /v1/catalog/offers?store_id=${store.id}&available=true`,
+      items: index === 0 ? declinedBatch.items.slice(0, split) : declinedBatch.items.slice(split),
+    })),
+  ];
 }
 
 function routeItems(route: CheckoutRoute): string {
@@ -71,6 +95,26 @@ export function storeBatchDetails(routes: CheckoutRoute[], phase: CheckoutSimula
       description: "The dashboard reads GET /v1/catalog/offers to create purchase batches.",
       tone: "info",
     }];
+  }
+
+  if (phase === "batch2_rerouted") {
+    return routes.map((route) => {
+      const completed = route.batch === 1;
+      return {
+        title: completed ? `Batch 1 / ${route.storeName}` : `Retry batch ${route.batch} / ${route.storeName}`,
+        meta: route.endpoint,
+        description: completed
+          ? `${routeItems(route)}. The first store group is already purchased.`
+          : `${routeItems(route)}. New portfolio route: payment retry is in progress at this replacement store.`,
+        route: {
+          label: completed
+            ? `STORE ROUTE B1: ${route.storeName} -> Result`
+            : `RETRY ROUTE B${route.batch}: ${route.storeName} -> Purchase`,
+          state: completed ? "ok" : "default",
+        },
+        tone: completed ? "ok" : "warn",
+      };
+    });
   }
 
   return routes.map((route) => {

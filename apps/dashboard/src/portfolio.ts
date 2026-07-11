@@ -45,6 +45,11 @@ const STATE_LABEL: Record<ItemState, string> = {
 function simulatedProgress(item: BasketItem, route: CheckoutRoute | undefined, phase: CheckoutSimulationPhase): ItemProgress | null {
   if (phase === "idle") return null;
   if (!route) return null;
+  if (phase === "batch2_rerouted") {
+    return route.batch === 1
+      ? { item, node: "result", state: "purchased", simulated: true, route }
+      : { item, node: "purchase", state: "processing", simulated: true, route };
+  }
   if (route.batch === 1) {
     if (phase === "batch1_processing") return { item, node: "purchase", state: "processing", simulated: true, route };
     return { item, node: "result", state: "purchased", simulated: true, route };
