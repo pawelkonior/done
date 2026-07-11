@@ -22,6 +22,17 @@ export interface NodeDetail {
 
 export type NodeDetails = Partial<Record<NodeId, NodeDetail[]>>;
 
+export interface ProductStoreRoute {
+  productId: string;
+  title: string;
+  quantity: number;
+  storeId: string;
+  storeName: string;
+  endpoint: string;
+  state: "planned" | "processing" | "purchased" | "failed";
+  simulated: boolean;
+}
+
 export interface LoopEvent {
   type: string;
   title: string;

@@ -171,6 +171,7 @@ function baseNodeDetails(detail: MissionDetail, routes: CheckoutRoute[]): NodeDe
 function renderWorkflow(detail: MissionDetail): void {
   const routes = buildCheckoutRoutes(detail.basket?.items ?? [], catalogOffers);
   const portfolio = portfolioFlow.update(detail, routes, checkoutPhase);
+  graph.setTopology(portfolio.topology);
   graph.setNodeSubtitles({
     ...portfolio.subtitles,
     snapshot: routes.length > 0 ? `${routes.length} identified stores` : undefined,

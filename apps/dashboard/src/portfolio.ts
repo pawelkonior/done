@@ -1,6 +1,6 @@
 import { productName } from "./detail";
 import type { CheckoutRoute, CheckoutSimulationPhase } from "./store-batches";
-import type { BasketItem, MissionDetail, NodeDetail, NodeDetails, NodeId, NodeSubtitles } from "./types";
+import type { BasketItem, MissionDetail, NodeDetail, NodeDetails, NodeId, NodeSubtitles, ProductStoreRoute } from "./types";
 
 type ItemState =
   | "planned"
@@ -23,6 +23,7 @@ interface ItemProgress {
 export interface PortfolioSnapshot {
   subtitles: NodeSubtitles;
   details: NodeDetails;
+  topology: ProductStoreRoute[];
 }
 
 export interface PortfolioFlow {
@@ -138,10 +139,37 @@ function subtitles(items: ItemProgress[]): NodeSubtitles {
   return output;
 }
 
+function topologyRoute(progress: ItemProgress): ProductStoreRoute {
+  const route = progress.route ?? {
+    batch: 1 as const,
+    storeId: "store-delio",
+    storeName: "delio",
+    endpoint: "GET /v1/catalog/offers?store_id=store-delio&available=true",
+    items: [],
+  };
+  const state = progress.state === "payment_failed"
+    ? "failed"
+    : progress.state === "processing"
+      ? "processing"
+      : progress.state === "purchased" || progress.state === "recovered"
+        ? "purchased"
+        : "planned";
+  return {
+    productId: progress.item.product_id,
+    title: productName(progress.item.product_id),
+    quantity: progress.item.quantity,
+    storeId: route.storeId,
+    storeName: route.storeName,
+    endpoint: route.endpoint,
+    state,
+    simulated: progress.simulated,
+  };
+}
+
 export function createPortfolioFlow(): PortfolioFlow {
   return {
     update(detail, routes, phase) {
-      if (!detail.basket) return { subtitles: {}, details: {} };
+      if (!detail.basket) return { subtitles: {}, details: {}, topology: [] };
       const items = detail.basket.items.map((item) => progressFor(item, detail, routes, phase));
       const details: NodeDetails = {};
       for (const item of items) {
@@ -149,7 +177,7 @@ export function createPortfolioFlow(): PortfolioFlow {
         list.push(detailFor(item));
         details[item.node] = list;
       }
-      return { subtitles: subtitles(items), details };
+      return { subtitles: subtitles(items), details, topology: items.map(topologyRoute) };
     },
     reset() {},
   };

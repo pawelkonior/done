@@ -1,10 +1,13 @@
 import { NODES } from "./mapping";
-import type { NodeDetail, NodeDetails, NodeId, NodeSubtitles } from "./types";
+import type { NodeDetail, NodeDetails, NodeId, NodeSubtitles, ProductStoreRoute } from "./types";
+
+const SVG_NS = "http://www.w3.org/2000/svg";
 
 export interface Graph {
   setActive(node: NodeId, warn: boolean): void;
   setNodeSubtitles(subtitles: NodeSubtitles): void;
   setNodeDetails(details: NodeDetails): void;
+  setTopology(products: ProductStoreRoute[]): void;
   flashFeedback(): void;
   reset(): void;
 }
@@ -44,41 +47,125 @@ function detailCard(detail: NodeDetail): HTMLElement {
   return card;
 }
 
+function topologyState(product: ProductStoreRoute): string {
+  return product.state === "failed" ? "error" : product.state === "purchased" ? "ok" : product.state === "processing" ? "warn" : "default";
+}
+
 export function createGraph(container: HTMLElement): Graph {
   container.replaceChildren();
-  container.classList.add("workflow-board");
+  container.classList.add("workflow-topology");
 
   const nodes = new Map<NodeId, NodeParts>();
+  const steps = document.createElement("section");
+  steps.className = "topology-steps";
+  const outcomes = document.createElement("section");
+  outcomes.className = "topology-outcomes";
+
   for (const spec of NODES) {
     const root = document.createElement("article");
-    root.className = "workflow-node";
+    root.className = "topology-node";
     root.dataset.node = spec.id;
     root.dataset.state = "idle";
-
     const header = document.createElement("div");
-    header.className = "workflow-node-header";
+    header.className = "topology-node-header";
     const number = document.createElement("span");
-    number.className = "workflow-node-number";
+    number.className = "topology-node-number";
     number.textContent = String(spec.num);
     const name = document.createElement("h2");
     name.textContent = spec.name;
     header.append(number, name);
-
     const subtitle = document.createElement("p");
-    subtitle.className = "workflow-node-subtitle";
+    subtitle.className = "topology-node-subtitle";
     subtitle.textContent = spec.sub;
     const details = document.createElement("div");
-    details.className = "workflow-node-details";
+    details.className = "topology-node-details";
     root.append(header, subtitle, details);
     nodes.set(spec.id, { root, subtitle, details });
-    container.append(root);
+    (spec.num <= 5 ? steps : outcomes).append(root);
   }
 
+  const map = document.createElement("section");
+  map.className = "topology-map";
+  const routeSvg = document.createElementNS(SVG_NS, "svg");
+  routeSvg.classList.add("topology-route-lines");
+  routeSvg.setAttribute("aria-hidden", "true");
+  const routeDefs = document.createElementNS(SVG_NS, "defs");
+  for (const [state, color] of [["default", "#a78bfa"], ["ok", "#4ef0c4"], ["warn", "#ffae33"], ["error", "#ff5d73"]]) {
+    const marker = document.createElementNS(SVG_NS, "marker");
+    marker.setAttribute("id", `route-arrow-${state}`);
+    marker.setAttribute("viewBox", "0 0 10 10");
+    marker.setAttribute("refX", "9");
+    marker.setAttribute("refY", "5");
+    marker.setAttribute("markerWidth", "6");
+    marker.setAttribute("markerHeight", "6");
+    marker.setAttribute("orient", "auto");
+    const tip = document.createElementNS(SVG_NS, "path");
+    tip.setAttribute("d", "M 0 0 L 10 5 L 0 10 z");
+    tip.setAttribute("fill", color);
+    marker.append(tip);
+    routeDefs.append(marker);
+  }
+  routeSvg.append(routeDefs);
+  const cart = document.createElement("section");
+  cart.className = "topology-cart";
+  const cartHeading = document.createElement("div");
+  cartHeading.className = "topology-heading";
+  cartHeading.innerHTML = "<strong>Cart products</strong><span>Store-connected purchase routes</span>";
+  const productList = document.createElement("div");
+  productList.className = "topology-products";
+  cart.append(cartHeading, productList);
+  const shops = document.createElement("section");
+  shops.className = "topology-shops";
+  const shopsHeading = document.createElement("div");
+  shopsHeading.className = "topology-heading";
+  shopsHeading.innerHTML = "<strong>Identified shops</strong><span>Catalog endpoints</span>";
+  const shopList = document.createElement("div");
+  shopList.className = "topology-shop-list";
+  shops.append(shopsHeading, shopList);
+  map.append(routeSvg, cart, shops);
+
   const feedback = document.createElement("div");
-  feedback.className = "workflow-feedback";
-  feedback.textContent = "Feedback loop: price, inventory and payment outcomes return to planning.";
-  container.append(feedback);
+  feedback.className = "topology-feedback";
+  feedback.textContent = "Feedback loop: prices, inventory and payment outcomes recalculate the cart projection.";
+  container.append(steps, map, outcomes, feedback);
+
   let feedbackTimer: number | undefined;
+  let topology: ProductStoreRoute[] = [];
+  let animationFrame: number | undefined;
+  const resizeObserver = new ResizeObserver(() => queueRouteDraw());
+  resizeObserver.observe(map);
+
+  function queueRouteDraw(): void {
+    if (animationFrame !== undefined) window.cancelAnimationFrame(animationFrame);
+    animationFrame = window.requestAnimationFrame(drawRoutes);
+  }
+
+  function drawRoutes(): void {
+    routeSvg.replaceChildren(routeDefs);
+    const bounds = map.getBoundingClientRect();
+    routeSvg.setAttribute("viewBox", `0 0 ${Math.max(1, bounds.width)} ${Math.max(1, bounds.height)}`);
+    routeSvg.setAttribute("width", String(Math.max(1, bounds.width)));
+    routeSvg.setAttribute("height", String(Math.max(1, bounds.height)));
+    for (const product of topology) {
+      const source = productList.querySelector<HTMLElement>(`[data-product-id="${product.productId}"]`);
+      const target = shopList.querySelector<HTMLElement>(`[data-store-id="${product.storeId}"]`);
+      if (!source || !target) continue;
+      const from = source.getBoundingClientRect();
+      const to = target.getBoundingClientRect();
+      const x1 = from.right - bounds.left;
+      const y1 = from.top - bounds.top + from.height / 2;
+      const x2 = to.left - bounds.left;
+      const y2 = to.top - bounds.top + to.height / 2;
+      const bend = Math.max(32, (x2 - x1) * 0.45);
+      const path = document.createElementNS(SVG_NS, "path");
+      path.classList.add("topology-route");
+      const state = topologyState(product);
+      path.dataset.state = state;
+      path.setAttribute("d", `M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`);
+      path.setAttribute("marker-end", `url(#route-arrow-${state})`);
+      routeSvg.append(path);
+    }
+  }
 
   function setNodeSubtitles(values: NodeSubtitles): void {
     for (const spec of NODES) {
@@ -90,9 +177,47 @@ export function createGraph(container: HTMLElement): Graph {
   function setNodeDetails(values: NodeDetails): void {
     for (const spec of NODES) {
       const parts = nodes.get(spec.id);
-      if (!parts) continue;
-      parts.details.replaceChildren(...(values[spec.id] ?? []).map(detailCard));
+      if (parts) parts.details.replaceChildren(...(values[spec.id] ?? []).map(detailCard));
     }
+  }
+
+  function setTopology(products: ProductStoreRoute[]): void {
+    topology = products;
+    productList.replaceChildren();
+    shopList.replaceChildren();
+    const grouped = new Map<string, ProductStoreRoute[]>();
+    for (const product of products) {
+      const items = grouped.get(product.storeId) ?? [];
+      items.push(product);
+      grouped.set(product.storeId, items);
+      const row = document.createElement("article");
+      row.className = "topology-product";
+      row.dataset.productId = product.productId;
+      row.dataset.state = topologyState(product);
+      const title = document.createElement("strong");
+      title.textContent = product.title;
+      const meta = document.createElement("span");
+      meta.textContent = `${product.quantity} × ${product.state}${product.simulated ? " · simulation" : ""}`;
+      const route = document.createElement("span");
+      route.className = "topology-product-route";
+      route.textContent = `→ ${product.storeName}`;
+      row.append(title, meta, route);
+      productList.append(row);
+    }
+    for (const [storeId, items] of grouped) {
+      const shop = document.createElement("article");
+      shop.className = "topology-shop";
+      shop.dataset.storeId = storeId;
+      const title = document.createElement("strong");
+      title.textContent = items[0].storeName;
+      const endpoint = document.createElement("code");
+      endpoint.textContent = items[0].endpoint;
+      const summary = document.createElement("span");
+      summary.textContent = `${items.length} connected products`;
+      shop.append(title, endpoint, summary);
+      shopList.append(shop);
+    }
+    queueRouteDraw();
   }
 
   return {
@@ -107,6 +232,7 @@ export function createGraph(container: HTMLElement): Graph {
     },
     setNodeSubtitles,
     setNodeDetails,
+    setTopology,
     flashFeedback() {
       feedback.classList.add("on");
       window.clearTimeout(feedbackTimer);
@@ -119,6 +245,7 @@ export function createGraph(container: HTMLElement): Graph {
       }
       setNodeSubtitles({});
       setNodeDetails({});
+      setTopology([]);
       feedback.classList.remove("on");
     },
   };
