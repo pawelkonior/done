@@ -34,6 +34,13 @@ function detailCard(detail: NodeDetail): HTMLElement {
     description.textContent = detail.description;
     card.append(description);
   }
+  if (detail.route) {
+    const route = document.createElement("span");
+    route.className = "workflow-route-link";
+    route.dataset.state = detail.route.state;
+    route.textContent = detail.route.label;
+    card.append(route);
+  }
   return card;
 }
 

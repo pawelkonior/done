@@ -268,6 +268,20 @@ html, body {
 .workflow-detail strong { overflow: hidden; color: var(--ink); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .workflow-detail-meta { overflow: hidden; color: var(--ink-dim); font-family: var(--mono); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .workflow-detail-description { color: var(--ink-faint); font-size: 10px; line-height: 1.35; }
+.workflow-route-link {
+  display: block;
+  padding: 4px 5px;
+  color: var(--violet);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1.35;
+  background: rgba(167, 139, 250, 0.09);
+  border-left: 3px solid var(--violet);
+  border-radius: 3px;
+}
+.workflow-route-link[data-state="ok"] { color: var(--mint); background: rgba(78, 240, 196, 0.08); border-left-color: var(--mint); }
+.workflow-route-link[data-state="error"] { color: var(--bad); background: rgba(255, 93, 115, 0.1); border-left-color: var(--bad); }
 .workflow-detail[data-tone="ok"] { border-color: rgba(78, 240, 196, 0.48); }
 .workflow-detail[data-tone="ok"] .workflow-detail-meta { color: var(--mint); }
 .workflow-detail[data-tone="warn"] { border-color: rgba(255, 174, 51, 0.52); }

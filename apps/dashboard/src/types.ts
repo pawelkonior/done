@@ -14,6 +14,10 @@ export interface NodeDetail {
   meta?: string;
   description?: string;
   tone?: "info" | "ok" | "warn" | "error";
+  route?: {
+    label: string;
+    state: "default" | "ok" | "error";
+  };
 }
 
 export type NodeDetails = Partial<Record<NodeId, NodeDetail[]>>;

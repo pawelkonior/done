@@ -88,12 +88,31 @@ function detailFor(progress: ItemProgress): NodeDetail {
       : progress.state === "planned"
         ? "info"
         : "warn";
+  const routeState = progress.state === "payment_failed"
+    ? "error"
+    : progress.state === "purchased" || progress.state === "recovered"
+      ? "ok"
+      : "default";
+  const destination = progress.state === "payment_failed"
+    ? "Purchase blocked"
+    : progress.state === "purchased" || progress.state === "recovered"
+      ? "Result"
+      : "Purchase";
   return {
     title: productName(progress.item.product_id),
     meta: `${progress.item.quantity} × ${STATE_LABEL[progress.state]}`,
     description: progress.route
-      ? `Connected to ${progress.route.storeName} · ${progress.route.endpoint}${progress.simulated ? " · checkout simulation" : ""}`
-      : progress.simulated ? "Checkout simulation" : "Store route not identified yet",
+      ? `Endpoint: ${progress.route.endpoint}${progress.simulated ? " · checkout simulation" : ""}`
+      : "Connected to the default checkout route.",
+    route: progress.route
+      ? {
+          label: `ROUTE B${progress.route.batch}: ${progress.route.storeName} → Snapshot → ${destination}`,
+          state: routeState,
+        }
+      : {
+          label: "ROUTE: default store → Snapshot → Purchase",
+          state: "default",
+        },
     tone,
   };
 }

@@ -20,14 +20,17 @@ interface Store {
   name: string;
 }
 
+const FALLBACK_STORES: readonly Store[] = [
+  { id: "store-delio", name: "delio" },
+  { id: "store-smyk", name: "Smyk" },
+];
+
 function selectStores(offers: CatalogOffer[]): Store[] {
   const stores = new Map<string, Store>();
   for (const offer of offers.filter((item) => item.is_available)) {
     stores.set(offer.store_id, { id: offer.store_id, name: offer.store_name });
   }
-  const priority = ["store-delio", "store-smyk"];
-  const preferred = priority.map((id) => stores.get(id)).filter((store): store is Store => Boolean(store));
-  return preferred.length >= 2 ? preferred.slice(0, 2) : [...stores.values()].slice(0, 2);
+  return FALLBACK_STORES.map((fallback) => stores.get(fallback.id) ?? fallback);
 }
 
 export function buildCheckoutRoutes(items: BasketItem[], offers: CatalogOffer[]): CheckoutRoute[] {
@@ -52,6 +55,10 @@ export function storeRouteDetails(routes: CheckoutRoute[]): NodeDetail[] {
     title: `Batch ${route.batch} → ${route.storeName}`,
     meta: route.endpoint,
     description: `Connected products: ${routeItems(route)}.`,
+    route: {
+      label: `STORE ROUTE B${route.batch}: ${route.storeName} → Node 6 Purchase`,
+      state: "default",
+    },
     tone: "info",
   }));
 }
@@ -85,6 +92,12 @@ export function storeBatchDetails(routes: CheckoutRoute[], phase: CheckoutSimula
       title: `Batch ${route.batch} · ${route.storeName}`,
       meta: route.endpoint,
       description: `${routeItems(route)}. ${outcome}`,
+      route: {
+        label: declined
+          ? `STORE ROUTE B${route.batch}: ${route.storeName} → Purchase blocked`
+          : `STORE ROUTE B${route.batch}: ${route.storeName} → Purchase`,
+        state: declined ? "error" : purchased ? "ok" : "default",
+      },
       tone: declined ? "error" : purchased ? "ok" : processing || waiting ? "warn" : "info",
     };
   });
