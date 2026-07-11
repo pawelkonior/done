@@ -103,12 +103,12 @@ również wtedy, gdy adapter raportuje `unavailable`.
   },
   "speech_to_text": {
     "status": "disabled",
-    "detail": "Set DONE_STT_ENABLED=true to enable local speech recognition."
+    "detail": "Set DONE_STT_ENABLED=true to enable OpenAI speech recognition."
   },
   "realtime": {
     "status": "disabled",
     "provider": "openai",
-    "model": "gpt-realtime-1.5",
+    "model": "gpt-realtime-2",
     "detail": "Set DONE_REALTIME_ENABLED=true to enable live voice."
   },
   "demo_failures": true,
@@ -134,7 +134,7 @@ Odpowiedź `200`:
 {
   "value": "ek_...",
   "expires_at": 1783761114,
-  "model": "gpt-realtime-1.5",
+  "model": "gpt-realtime-2",
   "voice": "marin"
 }
 ```
@@ -205,18 +205,18 @@ Odpowiedź `201` to `MissionDetail` z dodatkowym polem:
     "text": "...",
     "language": "pl",
     "duration_ms": 1585,
-    "audio_duration_seconds": 9.505,
-    "model": "turbo",
-    "segments": 2
+    "audio_duration_seconds": null,
+    "model": "gpt-4o-transcribe",
+    "segments": 0
   }
 }
 ```
 
 Limity i błędy:
 
-- `413` — upload przekracza `DONE_WHISPER_MAX_UPLOAD_BYTES`;
+- `413` — upload przekracza `DONE_TRANSCRIPTION_MAX_UPLOAD_BYTES`;
 - `422` — brak pola `file`, pusty/nieobsługiwany plik albo pusty transcript;
-- `503` — STT wyłączone lub sidecar niedostępny;
+- `503` — STT wyłączone, OpenAI niedostępne, brak credentials/quota albo błąd dostawcy;
 - `201` — transkrypcja i utworzenie misji zakończone.
 
 ### `GET /v1/missions`
@@ -550,46 +550,11 @@ większe od zera. Preferred merchant IDs muszą istnieć i być aktywne.
 }
 ```
 
-## Prywatny kontrakt STT
+## Serwerowa granica STT
 
-Sidecar `apps/stt` nie jest publicznym API aplikacji mobilnej.
-
-### `GET /health`
-
-```json
-{
-  "status": "available",
-  "model": "turbo",
-  "model_cached": true,
-  "model_loaded": false,
-  "ffmpeg": true,
-  "detail": null
-}
-```
-
-Health nie ładuje modelu. Status może być `degraded`, jeśli brakuje pakietu,
-checkpointu lub ffmpeg.
-
-### `POST /v1/audio/transcriptions`
-
-Multipart: wymagane `file`, opcjonalne `language`. Kod języka musi mieć format
-`pl` albo `pl-PL`.
-
-Response `200`:
-
-```json
-{
-  "text": "Kup napoje bez orzechów.",
-  "language": "pl",
-  "duration_ms": 1585,
-  "audio_duration_seconds": 9.505,
-  "model": "turbo",
-  "segments": 2
-}
-```
-
-Statusy: `413` za rozmiar/długość, `415` za extension/content type, `422` za
-niepoprawne lub puste audio/language, `503` za brak ffmpeg/modelu albo błąd
-inference.
-
-Sidecar udostępnia `/docs` i `/openapi.json`; `redoc` jest wyłączony.
+Aplikacja mobilna nie wywołuje OpenAI bezpośrednio dla nagrań plikowych. Wysyła
+multipart do `/v1/missions/voice`, a `OpenAITranscriptionAdapter` przekazuje
+audio do `POST /v1/audio/transcriptions` z modelem `gpt-4o-transcribe`.
+Standardowy `OPENAI_API_KEY` pozostaje wyłącznie po stronie API. Odpowiedź
+dostawcy jest mapowana na publiczne pole `transcription`, a treści błędów
+dostawcy i credentials nie są zwracane klientowi.

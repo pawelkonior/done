@@ -14,15 +14,14 @@ flowchart LR
     Mobile["Expo mobile/web"] --> API["Done FastAPI modular monolith"]
     API --> DB[("SQLite")]
     API -. "optional structured inference" .-> Ollama["Local Ollama"]
-    API -. "optional audio transcription" .-> STT["Private Whisper sidecar"]
-    API -. "ephemeral Realtime secret" .-> OpenAI["OpenAI Realtime"]
+    API -. "audio transcription" .-> OpenAI["OpenAI API"]
+    API -. "ephemeral Realtime secret" .-> OpenAI
     Mobile -. "WebRTC with short-lived secret" .-> OpenAI
-    STT --> Model["Local Whisper checkpoint"]
 ```
 
-API jest jedynym publicznym backendem aplikacji. Sidecar STT ma osobny proces i
-powinien być dostępny wyłącznie dla API. Ollama również jest zależnością lokalną,
-nie częścią publicznego kontraktu HTTP Done.
+API jest jedynym publicznym backendem aplikacji. Standardowy klucz OpenAI
+pozostaje wyłącznie w procesie API; aplikacja otrzymuje tylko krótkotrwały sekret
+Realtime. Ollama jest zależnością lokalną, nie częścią publicznego kontraktu HTTP.
 
 ## Moduły i reguła zależności
 
@@ -87,11 +86,10 @@ request ID i mapowanie wyjątków na statusy HTTP.
 - `SQLiteUserRepository` implementuje port persistence kontekstu użytkownika;
 - `OllamaAdapter` implementuje structured output, semantic validation,
   allowlistę tool calls i health checks;
-- `WhisperSidecarAdapter` wysyła zwalidowane audio do prywatnego sidecara;
+- `OpenAITranscriptionAdapter` wysyła zwalidowane audio do serwerowego endpointu
+  OpenAI Audio API z modelem `gpt-4o-transcribe`;
 - `OpenAIRealtimeAdapter` tworzy krótko żyjący sekret WebRTC, wiąże go z
   prywatnym hash ID użytkownika i redaguje błędy dostawcy;
-- `apps/stt` jest izolowanym procesem Whisper z normalizacją ffmpeg, lazy model
-  loading i ograniczoną współbieżnością.
 
 ## Bounded contexts
 
@@ -134,16 +132,16 @@ Ustawienia są snapshotowane do nowej misji jako `MissionExecutionPolicy`:
 - safe recovery, preferred merchants i default constraints trafiają do
   kontraktu misji.
 
-### Local Inference
+### Inference services
 
 Jest supporting contextem za portami application layer:
 
 - Ollama: JSON Schema structured output, stały seed/temperature, kontrolowana
   współbieżność, semantic fallback i allowlista narzędzi;
-- Whisper: prywatny HTTP sidecar, walidacja metadanych audio, limit rozmiaru i
-  długości, ffmpeg uruchamiany bez powłoki, pliki tymczasowe usuwane po request.
+- OpenAI STT: serwerowy multipart do `gpt-4o-transcribe`, walidacja formatu i
+  rozmiaru oraz bezpieczne redagowanie błędów dostawcy.
 
-Oba adaptery są opcjonalne. Wyłączenie AI nie blokuje misji tekstowych.
+Adaptery są opcjonalne. Wyłączenie AI nie blokuje misji tekstowych.
 Wyłączenie STT blokuje wyłącznie prawdziwy multipart audio; JSON na endpointcie
 voice pozostaje dostępny jako ścieżka kompatybilności/accessibility.
 
@@ -152,7 +150,7 @@ voice pozostaje dostępny jako ścieżka kompatybilności/accessibility.
 Live Voice jest supporting contextem za `RealtimeSessionPort`. Serwer używa
 standardowego klucza wyłącznie do `POST /v1/realtime/client_secrets`. Klient
 łączy się z OpenAI przez WebRTC sekretem krótkotrwałym; klucz standardowy nie
-jest bundlowany. Sesja używa `gpt-realtime-1.5`, głosu `marin`, transkrypcji
+jest bundlowany. Sesja używa `gpt-realtime-2`, głosu `marin`, transkrypcji
 `gpt-realtime-whisper` i jednej funkcji `submit_mission`.
 
 Funkcja nie omija domeny. Jej transcript trafia do
@@ -263,7 +261,7 @@ HTTP JSON
 HTTP multipart
 → upload size check
 → SpeechToTextPort
-→ Whisper sidecar / ffmpeg / local model
+→ OpenAI Audio API / gpt-4o-transcribe
 → transcript
 → ten sam przepływ co misja tekstowa
 ```
@@ -278,9 +276,9 @@ po rosnącym cursorze.
 ## Decyzje architektoniczne
 
 1. **Safety first:** deterministyczna polityka jest nadrzędna wobec AI.
-2. **Local first:** SQLite, Ollama i Whisper mogą działać bez zewnętrznego SaaS.
+2. **Local core:** SQLite i deterministyczny workflow działają bez zewnętrznego SaaS.
 3. **Optional inference:** brak AI nie blokuje podstawowego use-case'u.
-4. **Isolated STT:** ciężki model i ffmpeg nie działają w procesie API.
+4. **Server-only speech credentials:** standardowy klucz OpenAI nie trafia do aplikacji.
 5. **Single deployable API:** moduły domenowe pozostają w jednym procesie i
    jednej transakcyjnej bazie.
 6. **Explicit demo boundary:** fault injection można wyłączyć niezależnie od
@@ -298,7 +296,7 @@ po rosnącym cursorze.
 - brak formalnych migracji schematu;
 - brak encryption-at-rest, rate limiting i aplikacyjnego audit logu dostępu;
 - runtime metrics są metrykami demonstracyjnymi, nie systemem observability;
-- `GET /health` nie sprawdza Ollama ani Whisper;
+- `GET /health` nie sprawdza Ollama ani OpenAI;
 - profile i settings są trwałe, ale nie są powiązane z uwierzytelnioną sesją.
 
 Realne commerce integrations muszą zostać dodane jako porty application layer,
