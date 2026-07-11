@@ -5,6 +5,7 @@ import {
   requestHumanSupport,
   resolveActionRequest,
   resolveApproval,
+  selectDeliveryOption,
 } from "@/api/client";
 import type { RealtimeCommand } from "@/realtime/events";
 import type { MissionDetail } from "@/types/domain";
@@ -52,6 +53,10 @@ export interface MissionCommandApi {
     missionId: string,
     input: { reason?: string; expected_revision: number },
   ) => Promise<MissionDetail>;
+  selectDeliveryOption: (
+    missionId: string,
+    input: { option_id: string; expected_revision: number },
+  ) => Promise<MissionDetail>;
 }
 
 export class MissionCommandRejected extends Error {
@@ -73,6 +78,7 @@ const defaultApi: MissionCommandApi = {
   resolveActionRequest,
   cancelMission,
   requestHumanSupport,
+  selectDeliveryOption,
 };
 
 function reject(code: string, message: string): never {
@@ -159,6 +165,66 @@ function statusOutput(detail: MissionDetail) {
   };
 }
 
+function purchasePlanOutput(detail: MissionDetail) {
+  const basket = detail.basket;
+  if (!basket) return reject("PURCHASE_PLAN_UNAVAILABLE", "There is no current purchase plan.");
+  const delivery = detail.delivery_options.find((option) => option.selected) ?? null;
+  return {
+    basket: {
+      merchant: basket.merchant,
+      merchant_id: basket.merchant_id,
+      subtotal: basket.subtotal,
+      delivery_cost: basket.delivery_cost,
+      total: basket.total,
+      currency: basket.currency,
+      items: basket.items.map((item) => ({
+        name: item.name,
+        category: item.category,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        total: item.total,
+      })),
+    },
+    selected_delivery: delivery
+      ? {
+          id: delivery.id,
+          name: delivery.name,
+          eta: delivery.eta,
+          price: delivery.price,
+          currency: delivery.currency,
+          reliability: delivery.reliability,
+        }
+      : null,
+    guardrails: {
+      hard_constraints: detail.contract?.hard_constraints ?? [],
+      portfolio_checks: detail.portfolio_decision?.constraint_report ?? [],
+      approval_status: detail.approval?.status ?? null,
+    },
+  };
+}
+
+function deliveryChoiceMatchesVoice(detail: MissionDetail, optionId: string, transcript: string) {
+  const option = detail.delivery_options.find((candidate) => candidate.id === optionId);
+  if (!option || option.available === false || option.selected) return false;
+  const compact = (value: string) => Array.from(value.toLocaleLowerCase("pl-PL"))
+    .filter((character) => /[\p{L}\p{N}]/u.test(character))
+    .join("");
+  const spoken = transcript.toLocaleLowerCase("pl-PL");
+  const compactSpoken = compact(spoken);
+  if ([option.id, option.name, option.badge].some((value) => {
+    const candidate = compact(value);
+    return candidate.length >= 2 && compactSpoken.includes(candidate);
+  })) {
+    return true;
+  }
+  const available = detail.delivery_options.filter((candidate) => candidate.available !== false);
+  const cheapest = Math.min(...available.map((candidate) => candidate.price));
+  const mostReliable = Math.max(...available.map((candidate) => candidate.reliability ?? 0));
+  if (option.price === cheapest && /najtań\w*|cheapest|lowest price/u.test(spoken)) return true;
+  if ((option.reliability ?? 0) === mostReliable && /najpewn\w*|reliable|safest/u.test(spoken)) return true;
+  return false;
+}
+
 function success(action: string, detail: MissionDetail, extra?: Record<string, unknown>): MissionCommandResult {
   return {
     detail,
@@ -197,6 +263,10 @@ export async function executeMissionRealtimeCommand(
   const revision = requireRevision(current, command.revision);
   const voiceEvidence = normalizedVoiceEvidence(context.voiceTranscript);
 
+  if (command.name === "get_purchase_plan") {
+    return success("purchase_plan_read", current, purchasePlanOutput(current));
+  }
+
   if (command.name === "confirm_contract") {
     if (!current.contract) {
       return reject("CONTRACT_UNAVAILABLE", "There is no complete contract to confirm yet.");
@@ -225,6 +295,20 @@ export async function executeMissionRealtimeCommand(
       "VOICE_INTENT_MISMATCH",
       "The requested action did not match the words in the current voice turn.",
     );
+  }
+
+  if (command.name === "select_delivery") {
+    if (!deliveryChoiceMatchesVoice(current, command.optionId, voiceEvidence)) {
+      return reject(
+        "DELIVERY_VOICE_MISMATCH",
+        "The delivery option did not match the words in the current voice turn.",
+      );
+    }
+    const detail = await api.selectDeliveryOption(context.missionId, {
+      option_id: command.optionId,
+      expected_revision: revision,
+    });
+    return success("delivery_selected", detail, { option_id: command.optionId });
   }
 
   if (command.name === "correct_mission") {

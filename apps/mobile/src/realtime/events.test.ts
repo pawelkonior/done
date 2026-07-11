@@ -103,6 +103,26 @@ describe("Realtime event parsing", () => {
     expect(parseRealtimeCommand(responseDone("get_status", {
       mission_id: "mission-1",
     }))).toEqual({ name: "get_status", callId: "call-1", missionId: "mission-1" });
+    expect(parseRealtimeCommand(responseDone("get_purchase_plan", {
+      mission_id: "mission-1",
+      revision: 2,
+    }))).toEqual({
+      name: "get_purchase_plan",
+      callId: "call-1",
+      missionId: "mission-1",
+      revision: 2,
+    });
+    expect(parseRealtimeCommand(responseDone("select_delivery", {
+      mission_id: "mission-1",
+      revision: 2,
+      option_id: "delivery-value",
+    }))).toEqual({
+      name: "select_delivery",
+      callId: "call-1",
+      missionId: "mission-1",
+      revision: 2,
+      optionId: "delivery-value",
+    });
   });
 
   it("parses guarded purchase approval and rejection commands", () => {

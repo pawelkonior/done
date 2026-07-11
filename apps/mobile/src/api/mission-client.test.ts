@@ -118,6 +118,25 @@ describe("mission API client", () => {
     });
   });
 
+  it("aborts a stalled API request instead of leaving the phone waiting forever", async () => {
+    jest.useFakeTimers();
+    fetchMock.mockImplementation((_url: string, init?: RequestInit) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => {
+        reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+      }, { once: true });
+    }));
+    try {
+      const rejection = expect(listMissions()).rejects.toMatchObject({
+        status: 0,
+        message: expect.stringContaining("did not respond within 20 seconds"),
+      });
+      await jest.advanceTimersByTimeAsync(20_000);
+      await rejection;
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it("uploads a voice recording as FormData without forcing a JSON content type", async () => {
     fetchMock.mockResolvedValue(response({ ...detail, transcription: { text: "Buy coffee", language: "en", model: "gpt-4o-transcribe" } }));
     const result = await createVoiceMission({ audioUri: "file:///tmp/mission.m4a", locale: "en-PL", timezone: "Europe/Warsaw", language: "en-PL" });

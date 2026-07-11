@@ -46,6 +46,7 @@ def bound_mission_context(*, status: str = "approval_required") -> dict[str, Any
             "revision": 7,
             "status": status,
             "contract_available": True,
+            "plan_available": True,
         },
         "approval": {
             "id": "apr_bound",
@@ -58,9 +59,15 @@ def bound_mission_context(*, status: str = "approval_required") -> dict[str, Any
         },
         "action": {
             "id": "act_bound",
+            "type": "recovery_decision",
             "status": "pending",
             "owner": "user",
             "choices": ["retry_once", "request_human", "cancel"],
+            "missing_information": [],
+        },
+        "delivery": {
+            "selected_id": "delivery-priority",
+            "choices": ["delivery-value"],
         },
         "untrusted_data": {
             "mission_title": "Birthday supplies",
@@ -143,11 +150,13 @@ def test_mission_tools_are_dynamically_bound_to_trusted_state() -> None:
 
     assert set(tools) == {
         "get_status",
+        "get_purchase_plan",
         "confirm_contract",
         "correct_mission",
         "approve_purchase",
         "reject_purchase",
         "choose_recovery",
+        "select_delivery",
         "cancel_mission",
         "request_human",
     }
@@ -177,6 +186,31 @@ def test_mission_tools_are_dynamically_bound_to_trusted_state() -> None:
         "type": "string",
         "enum": ["retry_once", "request_human", "cancel"],
     }
+    assert tools["select_delivery"]["parameters"]["properties"]["option_id"] == {
+        "type": "string",
+        "enum": ["delivery-value"],
+    }
+
+
+def test_clarification_session_requires_answer_tool_after_spoken_details() -> None:
+    context = bound_mission_context(status="clarification_required")
+    context["approval"] = None
+    context["action"] = {
+        "id": "act_clarification",
+        "type": "clarification",
+        "status": "pending",
+        "owner": "user",
+        "choices": ["answer_by_voice", "request_human", "cancel"],
+        "missing_information": ["shopping_scope", "deadline"],
+    }
+
+    session = mission_session(context)
+    tools = {tool["name"]: tool for tool in session["tools"]}
+
+    assert session["tools"]
+    assert "do not merely acknowledge the answer" in session["instructions"]
+    assert "Do not only acknowledge their answer" in tools["choose_recovery"]["description"]
+    assert "answer_by_voice" in tools["choose_recovery"]["parameters"]["properties"]["choice"]["enum"]
 
 
 def test_sensitive_tools_fail_closed_without_complete_user_owned_state() -> None:
@@ -201,7 +235,10 @@ def test_sensitive_tools_fail_closed_without_complete_user_owned_state() -> None
 def test_terminal_mission_exposes_status_read_only() -> None:
     session = mission_session(bound_mission_context(status="completed"))
 
-    assert [tool["name"] for tool in session["tools"]] == ["get_status"]
+    assert [tool["name"] for tool in session["tools"]] == [
+        "get_status",
+        "get_purchase_plan",
+    ]
     assert session["tools"][0]["parameters"]["properties"]["mission_id"] == {
         "type": "string",
         "const": "mis_bound",
@@ -337,9 +374,11 @@ def test_realtime_endpoint_selects_only_user_owned_action_context(
             },
             {
                 "id": "act_user",
+                "type": "recovery_decision",
                 "status": "pending",
                 "owner": "user",
                 "question": "Which safe option should be used?",
+                "context": {},
                 "options": [
                     {"id": "retry_once", "label": "Retry once"},
                     {"id": "cancel", "label": "Cancel"},
@@ -361,17 +400,29 @@ def test_realtime_endpoint_selects_only_user_owned_action_context(
         "revision": 9,
         "status": "approval_required",
         "contract_available": True,
+        "plan_available": True,
     }
     assert fake.mission_context["approval"]["amount"] == 123.45
     assert fake.mission_context["action"] == {
         "id": "act_user",
+        "type": "recovery_decision",
         "status": "pending",
         "owner": "user",
         "choices": ["retry_once", "cancel"],
+        "missing_information": [],
+    }
+    assert fake.mission_context["delivery"] == {
+        "selected_id": None,
+        "choices": [],
     }
     assert fake.mission_context["untrusted_data"] == {
         "mission_title": "Text supplied by a human or catalog",
         "action_question": "Which safe option should be used?",
+        "purchase_plan": {
+            "basket": {"total": 999.99, "currency": "PLN"},
+            "delivery_options": [],
+            "guardrail_results": [],
+        },
     }
 
 

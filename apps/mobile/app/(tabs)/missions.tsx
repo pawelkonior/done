@@ -7,14 +7,13 @@ import { CircleAction, PageHeader } from "@/components/PageHeader";
 import { GlassCard } from "@/components/GlassCard";
 import { IconTile } from "@/components/IconTile";
 import { MissionCard } from "@/components/MissionCard";
-import { MissionComposer } from "@/components/MissionComposer";
 import { MissionTimeline } from "@/components/MissionTimeline";
 import { ChoiceRow, PreferenceModal } from "@/components/PreferenceModal";
 import { ProgressBar } from "@/components/ProgressBar";
 import { ScreenState } from "@/components/ScreenState";
 import { StatusPill } from "@/components/StatusPill";
 import { VoiceShortcut } from "@/components/VoiceShortcut";
-import { useCreateTextMission, useMissions, useUserProfile } from "@/api/hooks";
+import { useMissions } from "@/api/hooks";
 import type { MissionListFilters } from "@/types/domain";
 import { colors, radii, spacing, type } from "@/theme/tokens";
 
@@ -38,10 +37,6 @@ const errorMessage = (error: unknown) => error instanceof Error ? error.message 
 
 export default function MissionsScreen() {
   const router = useRouter();
-  const profile = useUserProfile();
-  const create = useCreateTextMission();
-  const [composerOpen, setComposerOpen] = useState(false);
-  const [composerError, setComposerError] = useState<string | null>(null);
   const [filterOpen, setFilterOpen] = useState(false);
   const [actionFilter, setActionFilter] = useState<ActionFilter>("all");
   const [sort, setSort] = useState<MissionSort>("updated");
@@ -72,21 +67,6 @@ export default function MissionsScreen() {
     setSort(draftSort);
     setSearch(draftSearch.trim());
     setFilterOpen(false);
-  };
-
-  const submit = async (text: string) => {
-    setComposerError(null);
-    try {
-      const result = await create.mutateAsync({
-        transcript: text,
-        locale: profile.data?.locale,
-        timezone: profile.data?.timezone,
-      });
-      setComposerOpen(false);
-      router.push(`/mission/${result.mission_id}`);
-    } catch (error) {
-      setComposerError(errorMessage(error));
-    }
   };
 
   return (
@@ -130,9 +110,9 @@ export default function MissionsScreen() {
       <View style={styles.list}>
         {missions.slice(1).map((mission) => <MissionCard key={mission.id} mission={mission} onPress={() => router.push(`/mission/${mission.id}`)} />)}
       </View>
-      <View style={styles.shortcut}><VoiceShortcut onPress={() => { setComposerError(null); setComposerOpen(true); }} /></View>
-
-      <MissionComposer visible={composerOpen} loading={create.isPending} error={composerError} onClose={() => setComposerOpen(false)} onSubmit={submit} />
+      <View style={styles.shortcut}>
+        <VoiceShortcut onPress={() => router.push({ pathname: "/", params: { live: "1" } })} />
+      </View>
 
       <PreferenceModal
         visible={filterOpen}

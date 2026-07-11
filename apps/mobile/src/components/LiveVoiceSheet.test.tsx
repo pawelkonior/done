@@ -64,6 +64,8 @@ const updatedDetail = {
   contract: null,
   basket: null,
   approval: null,
+  portfolio_decision: null,
+  order: null,
   events: [],
   metrics: {
     budget: 500,
@@ -258,6 +260,59 @@ describe("LiveVoiceSheet mission commands", () => {
       }),
     })));
     expect(executeMissionRealtimeCommand).toHaveBeenCalledTimes(1);
+    await screen.unmount();
+  });
+
+  it("submits a focused clarification directly from the verified microphone transcript", async () => {
+    const onClose = jest.fn();
+    const onMissionUpdated = jest.fn();
+    const onSubmitFocusedAction = jest.fn(async () => updatedDetail);
+    const screen = await render(
+      <LiveVoiceSheet
+        visible
+        language="en-PL"
+        missionId="mission-1"
+        focusedAction={{
+          id: "action-3",
+          revision: 6,
+          choice: "answer_by_voice",
+          question: "What should this purchase include?",
+          missingDetails: ["What to buy: gifts or party supplies", "Delivery date and time"],
+        }}
+        onSubmitFocusedAction={onSubmitFocusedAction}
+        onClose={onClose}
+        onMissionUpdated={onMissionUpdated}
+      />,
+    );
+    await waitFor(() => expect(getRealtimeClientSecret).toHaveBeenCalledWith("en-PL", "mission-1"));
+    expect(screen.getByText("• What to buy: gifts or party supplies")).toBeTruthy();
+
+    await act(async () => {
+      mockCallbacks.onEvent({
+        type: "input_audio_buffer.committed",
+        item_id: "item-answer",
+        previous_item_id: null,
+      });
+      mockCallbacks.onEvent({
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "item-answer",
+        content_index: 0,
+        transcript: "Buy birthday party supplies and deliver them next Friday at 5 PM.",
+      });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(onSubmitFocusedAction).toHaveBeenCalledWith(
+      "Buy birthday party supplies and deliver them next Friday at 5 PM.",
+    ));
+    expect(onMissionUpdated).toHaveBeenCalledWith(updatedDetail);
+    expect(executeMissionRealtimeCommand).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    await act(async () => {
+      mockCallbacks.onEvent({ type: "response.done", response: { output: [] } });
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
     await screen.unmount();
   });
 
