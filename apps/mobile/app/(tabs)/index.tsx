@@ -143,7 +143,10 @@ export default function NowScreen() {
         language={settingsQuery.data?.voice_language || profileQuery.data?.locale || "pl-PL"}
         onClose={() => setLiveVoiceOpen(false)}
         onSubmitTranscript={submitLive}
-        onMissionCreated={() => setLiveVoiceOpen(false)}
+        onMissionCreated={(missionId) => {
+          setLiveVoiceOpen(false);
+          openMission(missionId);
+        }}
       />
     </AppScreen>
   );
