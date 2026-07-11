@@ -66,6 +66,19 @@ with one another:
 curl "http://localhost:8001/v1/catalog/offers?q=Minecraft&available=true&sort=price_asc&limit=150"
 ```
 
+For a dedicated product-search route, pass a required `q` parameter to
+`GET /v1/catalog/search`:
+
+```bash
+curl "http://localhost:8001/v1/catalog/search?q=Minecraft&available=true&sort=price_asc&limit=20"
+```
+
+Search is Unicode-normalized and case-insensitive across product name, brand,
+SKU and store name, including Polish letters such as `Ś`/`ś`. Leading and
+trailing whitespace is ignored, while `%` and `_` are treated as literal
+characters. The existing `q` filter on `/v1/catalog/offers` remains available
+for backwards compatibility.
+
 Supported filters are `q`, `store_id`, `product_id`, `category`,
 `effective_status`, `available`, `min_price_cents`, `max_price_cents`, `sort`,
 `limit` and `offset`. The default and maximum limit are both 150. Each item
@@ -74,6 +87,7 @@ contains `product_url` alongside the normalized price and inventory fields.
 Main endpoints:
 
 - `GET /health`
+- `GET /v1/catalog/search?q=...`
 - `GET /v1/catalog/offers`
 - `POST /v1/missions/text`
 - `POST /v1/missions/voice`

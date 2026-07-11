@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import unicodedata
+
 from app.application.catalog_service import (
     CatalogOffer,
     CatalogPage,
@@ -19,6 +21,10 @@ _SORT_SQL: dict[CatalogSort, str] = {
 }
 
 
+def _normalize_search_text(value: str) -> str:
+    return unicodedata.normalize("NFKC", value).casefold()
+
+
 class SQLiteCatalogRepository:
     def __init__(self, database: Database):
         self._database = database
@@ -28,16 +34,16 @@ class SQLiteCatalogRepository:
         parameters: list[object] = []
 
         if query.search:
-            pattern = f"%{query.search.casefold()}%"
+            search = _normalize_search_text(query.search)
             clauses.append(
                 """
-                (LOWER(product_name) LIKE ?
-                 OR LOWER(brand) LIKE ?
-                 OR LOWER(sku) LIKE ?
-                 OR LOWER(store_name) LIKE ?)
+                (INSTR(NORMALIZE_CASEFOLD(product_name), ?) > 0
+                 OR INSTR(NORMALIZE_CASEFOLD(brand), ?) > 0
+                 OR INSTR(NORMALIZE_CASEFOLD(sku), ?) > 0
+                 OR INSTR(NORMALIZE_CASEFOLD(store_name), ?) > 0)
                 """
             )
-            parameters.extend([pattern, pattern, pattern, pattern])
+            parameters.extend([search, search, search, search])
         if query.store_id:
             clauses.append("store_id = ?")
             parameters.append(query.store_id)
@@ -64,6 +70,12 @@ class SQLiteCatalogRepository:
         order_sql = _SORT_SQL[query.sort]
 
         with self._database.reader() as connection:
+            connection.create_function(
+                "NORMALIZE_CASEFOLD",
+                1,
+                _normalize_search_text,
+                deterministic=True,
+            )
             total = int(
                 connection.execute(
                     f"SELECT COUNT(*) AS count FROM catalog_availability {where_sql}",

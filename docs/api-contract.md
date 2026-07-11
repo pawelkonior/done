@@ -201,6 +201,24 @@ Dozwolone statusy efektywne to `available`, `low_stock`, `out_of_stock`,
 Nieznane filtry identyfikatorów zwracają pustą listę z `200`; błędne enumy,
 zakresy lub paginacja zwracają `422`.
 
+### `GET /v1/catalog/search`
+
+Dedykowany endpoint wyszukiwania produktów. Wymaga parametru `q` o długości
+1–200 znaków i zwraca ten sam `CatalogOfferListResponse` co lista ofert.
+Wyszukiwanie jest normalizowane Unicode, nie rozróżnia wielkości liter (także
+dla polskich liter, np. `Ś`/`ś`) i obejmuje nazwę produktu, markę, SKU oraz
+nazwę sklepu. Białe znaki na początku i końcu są pomijane, natomiast `%` i `_`
+nie działają jak wildcardy SQL.
+
+Pozostałe filtry (`store_id`, `product_id`, `category`, `effective_status`,
+`available`, przedział cenowy, sortowanie i paginacja) można łączyć z frazą.
+Brak `q`, fraza zawierająca wyłącznie białe znaki albo nieprawidłowy filtr
+zwraca `422`. Brak dopasowań zwraca `200` z pustymi `offers` i `items`.
+
+```bash
+curl "http://localhost:8001/v1/catalog/search?q=Minecraft&category=gifts&available=true&sort=price_asc&limit=20"
+```
+
 ## Misje
 
 ### `POST /v1/missions/text`
