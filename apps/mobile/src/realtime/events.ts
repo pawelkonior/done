@@ -80,6 +80,15 @@ export type RealtimeCommand =
     })
   | (RealtimeCommandBase<"get_status"> & {
       missionId: string;
+    })
+  | (RealtimeCommandBase<"get_purchase_plan"> & {
+      missionId: string;
+      revision: number;
+    })
+  | (RealtimeCommandBase<"select_delivery"> & {
+      missionId: string;
+      revision: number;
+      optionId: string;
     });
 
 const MAX_ID_LENGTH = 200;
@@ -251,6 +260,23 @@ function parseCommandArguments(
     if (!hasExactKeys(args, ["mission_id"])) return null;
     const missionId = safeId(args.mission_id);
     return missionId ? { name, callId, missionId } : null;
+  }
+
+  if (name === "get_purchase_plan") {
+    if (!hasExactKeys(args, ["mission_id", "revision"])) return null;
+    const missionId = safeId(args.mission_id);
+    const revision = positiveRevision(args.revision);
+    return missionId && revision !== null ? { name, callId, missionId, revision } : null;
+  }
+
+  if (name === "select_delivery") {
+    if (!hasExactKeys(args, ["mission_id", "revision", "option_id"])) return null;
+    const missionId = safeId(args.mission_id);
+    const revision = positiveRevision(args.revision);
+    const optionId = safeId(args.option_id);
+    return missionId && revision !== null && optionId
+      ? { name, callId, missionId, revision, optionId }
+      : null;
   }
 
   return null;

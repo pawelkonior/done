@@ -22,9 +22,11 @@ import { ProgressBar } from "@/components/ProgressBar";
 import { RecoveryBanner } from "@/components/RecoveryBanner";
 import { ScreenState } from "@/components/ScreenState";
 import { StatusPill } from "@/components/StatusPill";
-import { useMission, useUserSettings } from "@/api/hooks";
+import { useMission, useResolveActionRequest, useUserSettings } from "@/api/hooks";
+import { actionMissingDetails, actionQuestion } from "@/lib/action-request";
 import { statusToStep } from "@/lib/status";
 import { colors, radii, spacing, type } from "@/theme/tokens";
+import type { ActionRequest } from "@/types/domain";
 
 const messageFor = (error: unknown, fallback = "Try again.") => error instanceof Error ? error.message : fallback;
 
@@ -35,7 +37,9 @@ export default function MissionDetailScreen() {
   const router = useRouter();
   const query = useMission(id);
   const settingsQuery = useUserSettings();
+  const actionMutation = useResolveActionRequest(missionId);
   const [liveVoiceOpen, setLiveVoiceOpen] = useState(false);
+  const [focusedVoiceAction, setFocusedVoiceAction] = useState<ActionRequest | null>(null);
 
   const detail = query.data;
 
@@ -82,7 +86,7 @@ export default function MissionDetailScreen() {
 
   const resolveAction = (choice: string) => {
     if (!pendingAction) return;
-    void choice;
+    if (choice === "answer_by_voice") setFocusedVoiceAction(pendingAction);
     setLiveVoiceOpen(true);
   };
 
@@ -130,7 +134,7 @@ export default function MissionDetailScreen() {
         <View style={styles.sectionGap}>
           <ActionRequestCard
             action={pendingAction}
-            loading={false}
+            loading={actionMutation.isPending}
             onChoose={resolveAction}
             onRequestHuman={requestSupport}
           />
@@ -188,7 +192,23 @@ export default function MissionDetailScreen() {
         visible={liveVoiceOpen}
         language={settingsQuery.data?.voice_language || "pl-PL"}
         missionId={missionId}
-        onClose={() => setLiveVoiceOpen(false)}
+        focusedAction={focusedVoiceAction ? {
+          id: focusedVoiceAction.id,
+          revision: mission.revision,
+          choice: "answer_by_voice",
+          question: actionQuestion(focusedVoiceAction),
+          missingDetails: actionMissingDetails(focusedVoiceAction),
+        } : undefined}
+        onSubmitFocusedAction={focusedVoiceAction ? (voiceTranscript) => actionMutation.mutateAsync({
+          actionRequestId: focusedVoiceAction.id,
+          choice: "answer_by_voice",
+          voiceTranscript,
+          expectedRevision: mission.revision,
+        }) : undefined}
+        onClose={() => {
+          setLiveVoiceOpen(false);
+          setFocusedVoiceAction(null);
+        }}
         onMissionUpdated={() => void query.refetch()}
         onMissionRefreshRequested={() => void query.refetch()}
       />

@@ -132,12 +132,115 @@ def to_cents(value: str | float | Decimal) -> int:
     return int((normalized * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
+_POLISH_NUMBER_VALUES = {
+    "zero": 0,
+    "jeden": 1,
+    "jedna": 1,
+    "dwa": 2,
+    "dwie": 2,
+    "trzy": 3,
+    "cztery": 4,
+    "pięć": 5,
+    "sześć": 6,
+    "siedem": 7,
+    "osiem": 8,
+    "dziewięć": 9,
+    "dziesięć": 10,
+    "jedenaście": 11,
+    "dwanaście": 12,
+    "trzynaście": 13,
+    "czternaście": 14,
+    "piętnaście": 15,
+    "szesnaście": 16,
+    "siedemnaście": 17,
+    "osiemnaście": 18,
+    "dziewiętnaście": 19,
+    "dwadzieścia": 20,
+    "trzydzieści": 30,
+    "czterdzieści": 40,
+    "pięćdziesiąt": 50,
+    "sześćdziesiąt": 60,
+    "siedemdziesiąt": 70,
+    "osiemdziesiąt": 80,
+    "dziewięćdziesiąt": 90,
+    "sto": 100,
+    "dwieście": 200,
+    "trzysta": 300,
+    "czterysta": 400,
+    "pięćset": 500,
+    "sześćset": 600,
+    "siedemset": 700,
+    "osiemset": 800,
+    "dziewięćset": 900,
+}
+_POLISH_THOUSANDS = {"tysiąc", "tysiące", "tysięcy"}
+_POLISH_CURRENCY_WORDS = {"pln", "zł", "złoty", "złote", "złotych"}
+_POLISH_GROSZ_WORDS = {"grosz", "grosze", "groszy"}
+
+
+def _parse_polish_number_tokens(tokens: list[str]) -> int | None:
+    total = 0
+    current = 0
+    found = False
+    for token in tokens:
+        if token == "i":
+            continue
+        if token in _POLISH_NUMBER_VALUES:
+            current += _POLISH_NUMBER_VALUES[token]
+            found = True
+            continue
+        if token in _POLISH_THOUSANDS:
+            total += max(current, 1) * 1_000
+            current = 0
+            found = True
+            continue
+        return None
+    return total + current if found else None
+
+
+def _polish_word_amounts_to_cents(value: str) -> set[int]:
+    tokens = re.findall(r"[a-ząćęłńóśźż]+", value.casefold())
+    amounts: set[int] = set()
+    number_words = set(_POLISH_NUMBER_VALUES) | _POLISH_THOUSANDS | {"i"}
+    for currency_index, token in enumerate(tokens):
+        if token not in _POLISH_CURRENCY_WORDS:
+            continue
+        start = currency_index
+        while start > 0 and tokens[start - 1] in number_words:
+            start -= 1
+        whole = _parse_polish_number_tokens(tokens[start:currency_index])
+        if whole is None:
+            continue
+        grosz_index = next(
+            (
+                index
+                for index in range(currency_index + 1, min(len(tokens), currency_index + 8))
+                if tokens[index] in _POLISH_GROSZ_WORDS
+            ),
+            None,
+        )
+        fractional = 0
+        if grosz_index is not None:
+            fractional_tokens = [
+                item
+                for item in tokens[currency_index + 1 : grosz_index]
+                if item != "i"
+            ]
+            parsed_fractional = _parse_polish_number_tokens(fractional_tokens)
+            if parsed_fractional is None or not 0 <= parsed_fractional < 100:
+                continue
+            fractional = parsed_fractional
+        amounts.add((whole * 100) + fractional)
+    return amounts
+
+
 def require_spoken_approval(
     transcript: str | None,
     *,
     amount_cents: int,
     currency: str,
     merchant_id: str,
+    merchant_labels: tuple[str, ...] = (),
 ) -> str:
     """Validate fail-closed spoken consent bound to the displayed total.
 
@@ -176,6 +279,7 @@ def require_spoken_approval(
             spoken_amounts.add(to_cents(compact))
         except (ValueError, ArithmeticError):
             continue
+    spoken_amounts.update(_polish_word_amounts_to_cents(normalized))
     if amount_cents not in spoken_amounts:
         raise WorkflowConflictError(
             "Spoken approval amount does not match the current plan"
@@ -190,9 +294,15 @@ def require_spoken_approval(
         raise WorkflowConflictError(
             "Spoken approval currency does not match the current plan"
         )
-    compact_spoken = re.sub(r"[^a-z0-9]+", "", normalized)
-    compact_merchant = re.sub(r"[^a-z0-9]+", "", merchant_id.casefold())
-    if not compact_merchant or compact_merchant not in compact_spoken:
+    compact_spoken = "".join(character for character in normalized if character.isalnum())
+    accepted_merchants = {
+        "".join(character for character in label.casefold() if character.isalnum())
+        for label in (merchant_id, *merchant_labels)
+        if label.strip()
+    }
+    if not accepted_merchants or not any(
+        merchant in compact_spoken for merchant in accepted_merchants
+    ):
         raise WorkflowConflictError(
             "Spoken approval merchant does not match the current plan"
         )
@@ -1212,11 +1322,16 @@ class MissionWorkflow:
                     "Approval must bind amount, currency, plan and merchant"
                 )
             if choice == "approve":
+                merchant = connection.execute(
+                    "SELECT name FROM merchants WHERE id = ?",
+                    (expected_merchant_id,),
+                ).fetchone()
                 voice_transcript = require_spoken_approval(
                     voice_transcript,
                     amount_cents=to_cents(expected_amount or 0),
                     currency=expected_currency or "",
                     merchant_id=expected_merchant_id or "",
+                    merchant_labels=(merchant["name"],) if merchant is not None else (),
                 )
 
             if approval["status"] != "pending":
@@ -5274,22 +5389,22 @@ class MissionWorkflow:
         for field in draft.missing_fields:
             if field == "shopping_scope":
                 questions.append(
-                    "Czy kupuję prezenty, czy wyposażenie przyjęcia urodzinowego?"
+                    "Should I buy gifts or birthday party supplies?"
                     if draft.occasion == Occasion.BIRTHDAY
-                    else "Jakie wymagania powinien spełniać ten zakup?"
+                    else "What should this purchase include?"
                 )
             elif field == "participants":
                 if draft.shopping_scope != ShoppingScope.AMBIGUOUS:
-                    questions.append("Dla ilu osób mam zrobić zakupy?")
+                    questions.append("How many people should I buy for?")
             elif field == "recipient_age":
-                questions.append("W jakim wieku są osoby, dla których kupuję prezenty?")
+                questions.append("How old are the gift recipients?")
             elif field in {"budget", "budget_currency"}:
-                questions.append("Jaki jest maksymalny budżet i waluta?")
+                questions.append("What is the maximum budget and currency?")
             elif field == "deadline":
-                questions.append("Na jaki dzień i godzinę potrzebna jest dostawa?")
+                questions.append("What delivery date and time do you need?")
             elif field == "deadline_time":
-                questions.append("Do której godziny tego dnia potrzebna jest dostawa?")
-        return questions or ["Czy potwierdzasz ten kontrakt misji?"]
+                questions.append("What time should delivery arrive by?")
+        return questions or ["Do you confirm this mission?"]
 
     @staticmethod
     def _catalog_constraints(
