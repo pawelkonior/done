@@ -6,10 +6,16 @@ import { createDetailPanel, simulateLineItemPaymentFailure } from "./detail";
 import { createGraph } from "./graph";
 import { EVENT_NODE, FEEDBACK_EVENTS, WARN_EVENTS, WARN_SEVERITIES } from "./mapping";
 import { createPortfolioFlow } from "./portfolio";
-import { storeBatchDetails } from "./store-batches";
+import {
+  buildCheckoutRoutes,
+  storeBatchDetails,
+  storeRouteDetails,
+  type CheckoutRoute,
+  type CheckoutSimulationPhase,
+} from "./store-batches";
 import { REPLAY_MISSION_TITLE, REPLAY_SCRIPT } from "./replay";
 import { createTicker } from "./ticker";
-import type { CatalogOffer, LoopEvent, MissionDetail, NodeDetails } from "./types";
+import type { CatalogOffer, LoopEvent, MissionDetail, NodeDetail, NodeDetails } from "./types";
 
 const EVENTS_POLL_MS = 1000;
 const MISSIONS_POLL_MS = 5000;
@@ -35,7 +41,9 @@ let detailInFlight = false;
 let latestDetail: MissionDetail | null = null;
 let lineItemFailureSimulation = false;
 let catalogOffers: CatalogOffer[] = [];
-let batchTwoFailureSimulation = false;
+let checkoutPhase: CheckoutSimulationPhase = "idle";
+let checkoutRevision = 0;
+let checkoutTimers: number[] = [];
 let replayTimer: number | undefined;
 /** Bumped on every view reset so stale in-flight responses are discarded. */
 let generation = 0;
@@ -74,10 +82,17 @@ function resetView(): void {
   detailPanel.reset();
   latestDetail = null;
   lineItemFailureSimulation = false;
-  batchTwoFailureSimulation = false;
+  clearCheckoutSimulation();
   updateSimulationButton();
   cursor = 0;
   generation += 1;
+}
+
+function clearCheckoutSimulation(): void {
+  for (const timer of checkoutTimers) window.clearTimeout(timer);
+  checkoutTimers = [];
+  checkoutPhase = "idle";
+  checkoutRevision = 0;
 }
 
 function updateSimulationButton(): void {
@@ -87,11 +102,11 @@ function updateSimulationButton(): void {
   simulateLineItemButton.textContent = lineItemFailureSimulation
     ? "clear line-item failure"
     : "simulate line-item failure";
-  simulateBatchTwoButton.disabled = catalogOffers.length === 0;
-  simulateBatchTwoButton.dataset.active = String(batchTwoFailureSimulation);
-  simulateBatchTwoButton.textContent = batchTwoFailureSimulation
-    ? "clear Batch 2 decline"
-    : "simulate Batch 2 decline";
+  simulateBatchTwoButton.disabled = catalogOffers.length === 0 || !latestDetail?.basket;
+  simulateBatchTwoButton.dataset.active = String(checkoutPhase !== "idle");
+  simulateBatchTwoButton.textContent = checkoutPhase === "idle"
+    ? "simulate checkout loop"
+    : "clear checkout simulation";
 }
 
 function mergeNodeDetails(...sources: NodeDetails[]): NodeDetails {
@@ -106,7 +121,7 @@ function mergeNodeDetails(...sources: NodeDetails[]): NodeDetails {
   return merged;
 }
 
-function baseNodeDetails(detail: MissionDetail): NodeDetails {
+function baseNodeDetails(detail: MissionDetail, routes: CheckoutRoute[]): NodeDetails {
   const storeCount = new Set(catalogOffers.map((offer) => offer.store_id)).size;
   const details: NodeDetails = {
     intake: [{
@@ -122,12 +137,24 @@ function baseNodeDetails(detail: MissionDetail): NodeDetails {
       tone: "info",
     }],
   };
+  const snapshot: NodeDetail[] = [];
   if (storeCount > 0) {
-    details.snapshot = [{
+    snapshot.push({
       title: `${catalogOffers.length} live catalog offers`,
       meta: `${storeCount} store endpoints`,
       description: "GET /v1/catalog/offers supplies price and availability snapshots.",
       tone: "info",
+    });
+  }
+  snapshot.push(...storeRouteDetails(routes));
+  if (snapshot.length > 0) details.snapshot = snapshot;
+  if (checkoutPhase !== "idle") {
+    const event = checkoutPhase === "batch1_purchased" ? "payment.authorized" : checkoutPhase === "batch2_declined" ? "payment.declined" : "payment.attempted";
+    details.model = [{
+      title: `Projection recalculated · revision ${checkoutRevision}`,
+      meta: `Hook fired from ${event}`,
+      description: "The dashboard refreshes after this event and continues its one-second live poll.",
+      tone: checkoutPhase === "batch2_declined" ? "warn" : "ok",
     }];
   }
   if (detail.order) {
@@ -142,10 +169,11 @@ function baseNodeDetails(detail: MissionDetail): NodeDetails {
 }
 
 function renderWorkflow(detail: MissionDetail): void {
-  const portfolio = portfolioFlow.update(detail);
+  const routes = buildCheckoutRoutes(detail.basket?.items ?? [], catalogOffers);
+  const portfolio = portfolioFlow.update(detail, routes, checkoutPhase);
   graph.setNodeSubtitles(portfolio.subtitles);
-  const batchDetails = storeBatchDetails(catalogOffers, batchTwoFailureSimulation);
-  graph.setNodeDetails(mergeNodeDetails(baseNodeDetails(detail), portfolio.details, { purchase: batchDetails }));
+  const batchDetails = storeBatchDetails(routes, checkoutPhase);
+  graph.setNodeDetails(mergeNodeDetails(baseNodeDetails(detail, routes), portfolio.details, { purchase: batchDetails }));
 }
 
 function renderDetail(detail: MissionDetail): void {
@@ -252,10 +280,46 @@ simulateLineItemButton.addEventListener("click", () => {
 });
 
 simulateBatchTwoButton.addEventListener("click", () => {
-  if (catalogOffers.length === 0) return;
-  batchTwoFailureSimulation = !batchTwoFailureSimulation;
-  if (latestDetail) renderDetail(latestDetail);
-  updateSimulationButton();
+  if (catalogOffers.length === 0 || !latestDetail?.basket) return;
+  if (checkoutPhase !== "idle") {
+    clearCheckoutSimulation();
+    renderDetail(latestDetail);
+    return;
+  }
+
+  checkoutPhase = "batch1_processing";
+  checkoutRevision = 0;
+  dispatch({
+    type: "payment.attempted",
+    title: "Simulation: Batch 1 payment started",
+    severity: "info",
+    created_at: new Date().toISOString(),
+  });
+  renderDetail(latestDetail);
+  checkoutTimers = [
+    window.setTimeout(() => {
+      checkoutPhase = "batch1_purchased";
+      checkoutRevision = 1;
+      dispatch({
+        type: "payment.authorized",
+        title: "Simulation: Batch 1 purchased — projection recalculated",
+        severity: "info",
+        created_at: new Date().toISOString(),
+      });
+      if (latestDetail) renderDetail(latestDetail);
+    }, 1400),
+    window.setTimeout(() => {
+      checkoutPhase = "batch2_declined";
+      checkoutRevision = 2;
+      dispatch({
+        type: "payment.declined",
+        title: "Simulation: Batch 2 declined — remaining cart recalculated",
+        severity: "warning",
+        created_at: new Date().toISOString(),
+      });
+      if (latestDetail) renderDetail(latestDetail);
+    }, 3000),
+  ];
 });
 
 async function loadStoreBatches(): Promise<void> {
