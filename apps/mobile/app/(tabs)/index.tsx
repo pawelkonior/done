@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Check, ListTodo, WifiOff } from "lucide-react-native";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import * as Speech from "expo-speech";
 import { AppScreen } from "@/components/AppScreen";
 import { MissionCard } from "@/components/MissionCard";
@@ -25,10 +25,6 @@ function isToday(value?: string | null) {
   return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === now.getDate();
 }
 
-function initials(name: string) {
-  return name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase() ?? "").join("") || "D";
-}
-
 export default function NowScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ live?: string }>();
@@ -46,8 +42,6 @@ export default function NowScreen() {
   const missions = missionsQuery.data?.items ?? (usingFallback ? fallbackMissions : []);
   const active = missions.filter((item) => !["completed", "cancelled", "failed"].includes(item.status));
   const completed = missions.filter((item) => item.status === "completed" && isToday(item.completed_at));
-  const profileName = profileQuery.data?.name.trim() || "there";
-  const firstName = profileName.split(/\s+/)[0] ?? profileName;
 
   useEffect(() => {
     if (params.live === "1" && !handledLiveLink.current) {
@@ -85,7 +79,7 @@ export default function NowScreen() {
 
   const submitVoice = async (audioUri: string | null) => {
     if (!audioUri) {
-      voice.setError("The recording could not be saved. Tap below to type your mission instead.");
+      voice.setError("The recording could not be saved. Please try again.");
       return;
     }
     voice.setSubmitting(true);
@@ -118,15 +112,19 @@ export default function NowScreen() {
 
   return (
     <AppScreen testID="now-screen">
-      <View style={styles.greetingRow}>
-        <View style={styles.greetingText}>
-          <Text style={styles.greeting}>Good morning,</Text>
-          <Text numberOfLines={1} style={styles.name}>{firstName}</Text>
-          <Text style={styles.prompt}>What should I take care of?</Text>
+      <View style={styles.topBar}>
+        <View style={styles.brand}>
+          <Image source={require("../../assets/icon.png")} style={styles.brandMark} />
+          <Text style={styles.brandName}>Done</Text>
         </View>
-        <Pressable accessibilityRole="button" accessibilityLabel="Open profile" onPress={() => router.push("/profile")} style={({ pressed }) => [styles.avatarRing, pressed && styles.pressed]} testID="open-profile">
-          <View style={styles.avatar}><Text style={styles.avatarText}>{initials(profileName)}</Text></View>
-          <View style={styles.onlineDot} />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Open profile"
+          onPress={() => router.push("/profile")}
+          style={({ pressed }) => [styles.avatarRing, pressed && styles.pressed]}
+          testID="open-profile"
+        >
+          <Image source={require("../../assets/profile-pawel.jpeg")} resizeMode="cover" style={styles.avatar} />
         </Pressable>
       </View>
 
@@ -139,7 +137,6 @@ export default function NowScreen() {
 
       <VoiceOrb
         onTap={() => setLiveVoiceOpen(true)}
-        onType={() => { setComposerError(null); setComposerOpen(true); }}
         onRecorded={submitVoice}
       />
 
@@ -152,7 +149,7 @@ export default function NowScreen() {
                 {active.slice(0, 2).map((mission) => <MissionCard key={mission.id} mission={mission} compact onPress={() => openMission(mission.id)} />)}
               </View>
             ) : (
-              <View style={styles.emptyComplete}><View style={styles.emptyCheck}><ListTodo color={colors.primaryBright} size={18} /></View><Text style={styles.emptyText}>No active missions. Add one above when you’re ready.</Text></View>
+              <View style={styles.emptyComplete}><View style={styles.emptyCheck}><ListTodo color={colors.primaryBright} size={18} /></View><Text style={styles.emptyText}>No active missions.</Text></View>
             )}
           </View>
 
@@ -161,7 +158,7 @@ export default function NowScreen() {
             {completed[0] ? (
               <MissionCard mission={completed[0]} compact completed onPress={() => openMission(completed[0]!.id)} />
             ) : (
-              <View style={styles.emptyComplete}><View style={styles.emptyCheck}><Check color={colors.success} size={18} /></View><Text style={styles.emptyText}>Completed missions will show up here.</Text></View>
+              <View style={styles.emptyComplete}><View style={styles.emptyCheck}><Check color={colors.success} size={18} /></View><Text style={styles.emptyText}>Nothing completed today.</Text></View>
             )}
           </View>
         </>
@@ -174,22 +171,19 @@ export default function NowScreen() {
         onClose={() => setLiveVoiceOpen(false)}
         onUseText={() => { setComposerError(null); setComposerOpen(true); }}
         onSubmitTranscript={submitLive}
-        onOpenMission={openMission}
+        onMissionCreated={() => setLiveVoiceOpen(false)}
       />
     </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  greetingRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: spacing.md },
-  greetingText: { flex: 1 },
-  greeting: { ...type.h2, fontWeight: "400", color: colors.textSecondary },
-  name: { ...type.display, color: colors.text, marginTop: 2 },
-  prompt: { ...type.body, color: colors.textSecondary, marginTop: spacing.sm },
-  avatarRing: { width: 60, height: 60, borderRadius: 30, borderWidth: 2, borderColor: colors.primarySoft, padding: 3 },
-  avatar: { flex: 1, borderRadius: 26, backgroundColor: "#272B43", alignItems: "center", justifyContent: "center" },
-  avatarText: { ...type.h3, color: colors.text },
-  onlineDot: { position: "absolute", width: 11, height: 11, borderRadius: 6, backgroundColor: colors.success, right: 0, bottom: 3, borderWidth: 2, borderColor: colors.background },
+  topBar: { minHeight: 52, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.md },
+  brand: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  brandMark: { width: 40, height: 40, borderRadius: 12 },
+  brandName: { ...type.h3, color: colors.text, letterSpacing: -0.3 },
+  avatarRing: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, borderColor: colors.borderStrong, padding: 3 },
+  avatar: { flex: 1, width: "100%", borderRadius: 18, backgroundColor: colors.surfaceElevated },
   pressed: { opacity: 0.68 },
   offlinePill: { alignSelf: "center", flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 6, paddingHorizontal: spacing.sm, marginTop: spacing.md, backgroundColor: "rgba(255,184,77,0.08)", borderRadius: radii.round },
   offlineText: { ...type.caption, color: colors.warning },

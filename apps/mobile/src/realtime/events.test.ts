@@ -1,4 +1,5 @@
 import {
+  parseRealtimeCommand,
   parseTranscriptFailure,
   parseTranscriptOrderEvent,
   parseSubmitMissionCall,
@@ -6,6 +7,20 @@ import {
   realtimeInputActivity,
   realtimeServerError,
 } from "@/realtime/events";
+
+const responseDone = (name: string, args: unknown, callId = "call-1") => ({
+  type: "response.done",
+  response: {
+    output: [{
+      type: "function_call",
+      name,
+      call_id: callId,
+      arguments: typeof args === "string" ? args : JSON.stringify(args),
+    }],
+  },
+});
+
+const PLAN_HASH = `sha256:${"a".repeat(64)}`;
 
 describe("Realtime event parsing", () => {
   it("parses transcript deltas and completion", () => {
@@ -55,21 +70,207 @@ describe("Realtime event parsing", () => {
   });
 
   it("accepts only a valid submit_mission function call", () => {
-    expect(parseSubmitMissionCall({
+    expect(parseSubmitMissionCall(responseDone(
+      "submit_mission",
+      { transcript: " Kup napoje do 50 PLN. " },
+    ))).toEqual({ callId: "call-1", transcript: "Kup napoje do 50 PLN." });
+    expect(parseSubmitMissionCall(responseDone("get_status", { mission_id: "mission-1" }))).toBeNull();
+  });
+
+  it("parses intake, contract, correction and status commands as a discriminated union", () => {
+    expect(parseRealtimeCommand(responseDone("submit_mission", {
+      transcript: "Prezenty dla pięciu osób do 500 PLN.",
+    }))).toEqual({
+      name: "submit_mission",
+      callId: "call-1",
+      transcript: "Prezenty dla pięciu osób do 500 PLN.",
+    });
+    expect(parseRealtimeCommand(responseDone("confirm_contract", {
+      mission_id: "mission-1",
+      revision: 2,
+    }))).toEqual({ name: "confirm_contract", callId: "call-1", missionId: "mission-1", revision: 2 });
+    expect(parseRealtimeCommand(responseDone("correct_mission", {
+      mission_id: "mission-1",
+      revision: 2,
+      correction: " Zmień budżet na 450 PLN. ",
+    }))).toEqual({
+      name: "correct_mission",
+      callId: "call-1",
+      missionId: "mission-1",
+      revision: 2,
+      correction: "Zmień budżet na 450 PLN.",
+    });
+    expect(parseRealtimeCommand(responseDone("get_status", {
+      mission_id: "mission-1",
+    }))).toEqual({ name: "get_status", callId: "call-1", missionId: "mission-1" });
+  });
+
+  it("parses guarded purchase approval and rejection commands", () => {
+    expect(parseRealtimeCommand(responseDone("approve_purchase", {
+      mission_id: "mission-1",
+      approval_id: "approval-9",
+      revision: 4,
+      amount: 499.99,
+      currency: "PLN",
+      plan_hash: PLAN_HASH,
+      merchant_id: "merchant-b",
+    }))).toEqual({
+      name: "approve_purchase",
+      callId: "call-1",
+      missionId: "mission-1",
+      approvalId: "approval-9",
+      revision: 4,
+      amount: 499.99,
+      currency: "PLN",
+      planHash: PLAN_HASH,
+      merchantId: "merchant-b",
+    });
+    expect(parseRealtimeCommand(responseDone("reject_purchase", {
+      mission_id: "mission-1",
+      approval_id: "approval-9",
+      revision: 4,
+      choice: "review",
+    }))).toEqual({
+      name: "reject_purchase",
+      callId: "call-1",
+      missionId: "mission-1",
+      approvalId: "approval-9",
+      revision: 4,
+      choice: "review",
+    });
+  });
+
+  it("parses recovery, cancellation and human-support commands", () => {
+    expect(parseRealtimeCommand(responseDone("choose_recovery", {
+      mission_id: "mission-1",
+      action_request_id: "action-3",
+      revision: 5,
+      choice: "use_substitute",
+    }))).toEqual({
+      name: "choose_recovery",
+      callId: "call-1",
+      missionId: "mission-1",
+      actionRequestId: "action-3",
+      revision: 5,
+      choice: "use_substitute",
+    });
+    expect(parseRealtimeCommand(responseDone("cancel_mission", {
+      mission_id: "mission-1",
+      revision: 5,
+    }))).toEqual({ name: "cancel_mission", callId: "call-1", missionId: "mission-1", revision: 5 });
+    expect(parseRealtimeCommand(responseDone("request_human", {
+      mission_id: "mission-1",
+      revision: 5,
+      reason: " Nie widzę dobrego zamiennika. ",
+    }))).toEqual({
+      name: "request_human",
+      callId: "call-1",
+      missionId: "mission-1",
+      revision: 5,
+      reason: "Nie widzę dobrego zamiennika.",
+    });
+    expect(parseRealtimeCommand(responseDone("request_human", {
+      mission_id: "mission-1",
+      revision: 5,
+    }))).toEqual({ name: "request_human", callId: "call-1", missionId: "mission-1", revision: 5 });
+  });
+
+  it("rejects unknown, malformed, ambiguous and non-response commands", () => {
+    expect(parseRealtimeCommand(responseDone("transfer_money", { amount: 10 }))).toBeNull();
+    expect(parseRealtimeCommand(responseDone("submit_mission", "{not-json"))).toBeNull();
+    expect(parseRealtimeCommand({
+      type: "response.done",
+      response: { output: [{ type: "function_call", name: "get_status", call_id: "call-1", arguments: [] }] },
+    })).toBeNull();
+    expect(parseRealtimeCommand({
       type: "response.done",
       response: {
-        output: [{
-          type: "function_call",
-          name: "submit_mission",
-          call_id: "call-1",
-          arguments: JSON.stringify({ transcript: "Kup napoje do 50 PLN." }),
-        }],
+        output: [
+          { type: "function_call", name: "get_status", call_id: "call-1", arguments: "{\"mission_id\":\"one\"}" },
+          { type: "function_call", name: "get_status", call_id: "call-2", arguments: "{\"mission_id\":\"two\"}" },
+        ],
       },
-    })).toEqual({ callId: "call-1", transcript: "Kup napoje do 50 PLN." });
-    expect(parseSubmitMissionCall({
-      type: "response.done",
-      response: { output: [{ type: "function_call", name: "unknown", arguments: "{}" }] },
     })).toBeNull();
+    expect(parseRealtimeCommand({ type: "response.created", response: { output: [] } })).toBeNull();
+    expect(parseRealtimeCommand({ type: "response.done", response: { output: [] } })).toBeNull();
+  });
+
+  it("rejects missing, extra and unsafe identifiers or text arguments", () => {
+    expect(parseRealtimeCommand(responseDone("get_status", {}))).toBeNull();
+    expect(parseRealtimeCommand(responseDone("get_status", {
+      mission_id: "mission-1",
+      unsafe_extra: true,
+    }))).toBeNull();
+    expect(parseRealtimeCommand(responseDone("get_status", { mission_id: "../../mission-1" }))).toBeNull();
+    expect(parseRealtimeCommand(responseDone("get_status", { mission_id: "x".repeat(201) }))).toBeNull();
+    expect(parseRealtimeCommand(responseDone("get_status", { mission_id: "mission-1" }, "bad call id"))).toBeNull();
+    expect(parseRealtimeCommand(responseDone("submit_mission", { transcript: "no" }))).toBeNull();
+    expect(parseRealtimeCommand(responseDone("correct_mission", {
+      mission_id: "mission-1",
+      revision: 1,
+      correction: "x".repeat(4_001),
+    }))).toBeNull();
+    expect(parseRealtimeCommand(responseDone("request_human", {
+      mission_id: "mission-1",
+      revision: 1,
+      reason: "x".repeat(1_001),
+    }))).toBeNull();
+  });
+
+  it("rejects unsafe revisions, amounts, currencies and choices", () => {
+    for (const revision of [0, -1, 1.5, "2", Number.MAX_SAFE_INTEGER + 1]) {
+      expect(parseRealtimeCommand(responseDone("confirm_contract", {
+        mission_id: "mission-1",
+        revision,
+      }))).toBeNull();
+    }
+    for (const amount of [0, -1, "499.99"]) {
+      expect(parseRealtimeCommand(responseDone("approve_purchase", {
+        mission_id: "mission-1",
+        approval_id: "approval-9",
+        revision: 4,
+        amount,
+        currency: "PLN",
+        plan_hash: PLAN_HASH,
+        merchant_id: "merchant-b",
+      }))).toBeNull();
+    }
+    for (const currency of ["pln", "GBP", "PLNX", 123]) {
+      expect(parseRealtimeCommand(responseDone("approve_purchase", {
+        mission_id: "mission-1",
+        approval_id: "approval-9",
+        revision: 4,
+        amount: 499.99,
+        currency,
+        plan_hash: PLAN_HASH,
+        merchant_id: "merchant-b",
+      }))).toBeNull();
+    }
+    for (const unsafePlanHash of ["sha256:short", `sha256:${"A".repeat(64)}`, "md5:abc", 123]) {
+      expect(parseRealtimeCommand(responseDone("approve_purchase", {
+        mission_id: "mission-1",
+        approval_id: "approval-9",
+        revision: 4,
+        amount: 499.99,
+        currency: "PLN",
+        plan_hash: unsafePlanHash,
+        merchant_id: "merchant-b",
+      }))).toBeNull();
+    }
+    for (const choice of ["approve", "reject", "", 1]) {
+      expect(parseRealtimeCommand(responseDone("reject_purchase", {
+        mission_id: "mission-1",
+        approval_id: "approval-9",
+        revision: 4,
+        choice,
+      }))).toBeNull();
+    }
+    expect(parseRealtimeCommand(responseDone("choose_recovery", {
+      mission_id: "mission-1",
+      action_request_id: "action-3",
+      revision: 5,
+      choice: "x".repeat(101),
+    }))).toBeNull();
   });
 
   it("does not expose provider error messages", () => {

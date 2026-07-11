@@ -1,5 +1,5 @@
 import { AudioLines, ChevronRight } from "lucide-react-native";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { colors, radii, spacing, type } from "@/theme/tokens";
 
@@ -10,10 +10,7 @@ export function VoiceShortcut({ onPress }: { onPress: () => void }) {
         <LinearGradient colors={[colors.primary, "#5D39C7"]} style={styles.icon}>
           <AudioLines size={28} color={colors.text} />
         </LinearGradient>
-        <View style={styles.textWrap}>
-          <Text style={styles.title}>Add a mission</Text>
-          <Text style={styles.subtitle}>Type a new request for Done</Text>
-        </View>
+        <Text style={styles.title}>Add mission</Text>
         <ChevronRight size={22} color={colors.primaryBright} />
       </LinearGradient>
     </Pressable>
@@ -24,7 +21,5 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.72 },
   card: { borderWidth: 1, borderColor: colors.borderStrong, borderRadius: radii.lg, padding: spacing.md, flexDirection: "row", alignItems: "center", gap: spacing.md },
   icon: { width: 54, height: 54, borderRadius: 27, alignItems: "center", justifyContent: "center" },
-  textWrap: { flex: 1 },
-  title: { ...type.bodyMedium, color: colors.primaryBright },
-  subtitle: { ...type.small, color: colors.textSecondary, marginTop: 2 },
+  title: { ...type.bodyMedium, color: colors.primaryBright, flex: 1 },
 });

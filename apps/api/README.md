@@ -1,7 +1,8 @@
-# Done demo API
+# Done API
 
-Deterministic FastAPI backend for the mobile demo. It uses only the Python
-standard-library SQLite driver, so no database service is required.
+FastAPI backend for the voice-first commerce flow. Safety-critical intent
+fields, catalog constraints, approvals and funding gates are deterministic and
+auditable. SQLite is the bundled local persistence adapter.
 
 ```bash
 cd apps/api
@@ -22,7 +23,10 @@ Main endpoints:
 - `GET /v1/missions/{mission_id}/events?after_id=0`
 - `PUT /v1/missions/{mission_id}/delivery-option`
 - `POST /v1/missions/{mission_id}/corrections`
+- `POST /v1/missions/{mission_id}/support`
+- `POST /v1/action-requests/{action_request_id}/resolve`
 - `POST /v1/approvals/{approval_id}/resolve`
+- `POST /v1/realtime/client-secret`
 - `POST /v1/demo/failures`
 - `POST /v1/demo/reset`
 - `GET|PATCH /v1/users/me`
@@ -46,16 +50,30 @@ entry has `id`, `title`, `subtitle`, `status`, `current_step`, `total_steps`,
 `progress`, `latest_update`, `created_at`, `completed_at` and
 `recovered_failures`.
 
-Approve the deterministic purchase with:
+If critical facts are missing, creation returns the persisted mission in
+`clarification_required` with a pending action request. Submit the spoken answer
+to `/corrections` with its exact `expected_revision`; the same mission ID then
+continues into catalog search.
+
+Approve an exact plan with every immutable binding returned in `approval`:
 
 ```json
 POST /v1/approvals/{approval_id}/resolve
-{"choice":"approve"}
+{
+  "choice": "approve",
+  "expected_revision": 4,
+  "amount": 219.94,
+  "currency": "PLN",
+  "plan_hash": "sha256:…",
+  "merchant_id": "merchant-b",
+  "voice_transcript": "Zatwierdzam ten plan za 219,94 zł."
+}
 ```
 
-The response is already completed and includes the full event sequence for UI
-animation: unavailable product, compliant substitution, retryable PSP_A decline,
-reroute to PSP_B and order confirmation. Poll incremental events with
+Any product, price, delivery or merchant change invalidates that approval and
+returns a fresh one. Inventory reservation, the restricted virtual-card request
+and payment remain empty until guardrails, exact approval and reservation share
+the same fingerprint. Poll incremental events with
 `GET /v1/missions/{mission_id}/events?after_id={cursor}`.
 
 Mission lists support `status`, `q`, `completed_from`, `completed_to`, `sort`
@@ -63,6 +81,21 @@ Mission lists support `status`, `q`, `completed_from`, `completed_to`, `sort`
 and delivery changes accept an optional `expected_revision`; clients may instead
 send `If-Match: "{revision}"`. A stale revision returns `409` and every material
 plan change replaces the pending approval.
+
+## Runtime modes
+
+- `DONE_COMMERCE_MODE=demo|sandbox` enables the local catalog and controlled
+  checkout simulation.
+- `DONE_COMMERCE_MODE=live` requires a bearer token and stops before reservation,
+  card creation or payment until real merchant and issuer adapters are connected.
+- `DONE_API_AUTH_ENABLED=true` and a 32+ character `DONE_API_AUTH_TOKEN` protect
+  all user/mission `/v1` routes. Live mode enables this requirement automatically.
+- Synthetic failures and demo endpoints are independently controlled by
+  `DONE_DEMO_FAILURES_ENABLED` and `DONE_DEMO_ENDPOINTS_ENABLED`.
+
+The stored `virtual_card_requests` row is an issuer-facing restriction spec
+(single use, exact maximum amount, merchant lock, TTL). It never contains PAN,
+CVV or other card credentials.
 
 ## User profile and settings
 

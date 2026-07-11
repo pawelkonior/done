@@ -6,6 +6,8 @@ export const statusLabel: Record<MissionStatus, string> = {
   transcribing: "Listening",
   understanding: "Understanding",
   clarification_required: "Needs clarification",
+  waiting_for_user: "Needs your decision",
+  waiting_for_support: "Human support",
   planning: "Planning",
   searching: "Searching",
   optimizing: "Optimizing",
@@ -24,6 +26,8 @@ export const statusColor: Record<MissionStatus, string> = {
   transcribing: colors.primary,
   understanding: colors.primary,
   clarification_required: colors.warning,
+  waiting_for_user: colors.warning,
+  waiting_for_support: colors.secondary,
   planning: colors.primary,
   searching: colors.primary,
   optimizing: colors.primary,
@@ -55,6 +59,8 @@ export const statusToStep = (status: MissionStatus, fallback = 1) => {
     transcribing: 0,
     understanding: 1,
     clarification_required: 1,
+    waiting_for_user: 4,
+    waiting_for_support: 4,
     planning: 1,
     searching: 2,
     optimizing: 3,
@@ -66,4 +72,3 @@ export const statusToStep = (status: MissionStatus, fallback = 1) => {
   };
   return map[status] ?? fallback;
 };
-

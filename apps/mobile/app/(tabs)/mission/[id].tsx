@@ -5,6 +5,7 @@ import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { AppScreen } from "@/components/AppScreen";
 import { ApprovalCard } from "@/components/ApprovalCard";
+import { ActionRequestCard } from "@/components/ActionRequestCard";
 import { BasketCard } from "@/components/BasketCard";
 import { ContractCard } from "@/components/ContractCard";
 import { DecisionCard } from "@/components/DecisionCard";
@@ -16,12 +17,13 @@ import { IconTile } from "@/components/IconTile";
 import { MetricsGrid } from "@/components/MetricsGrid";
 import { MissionComposer } from "@/components/MissionComposer";
 import { MissionTrackingCard } from "@/components/MissionTrackingCard";
+import { LiveVoiceSheet } from "@/components/LiveVoiceSheet";
 import { MissionTimeline } from "@/components/MissionTimeline";
 import { ProgressBar } from "@/components/ProgressBar";
 import { RecoveryBanner } from "@/components/RecoveryBanner";
 import { ScreenState } from "@/components/ScreenState";
 import { StatusPill } from "@/components/StatusPill";
-import { useCancelMission, useCorrectMission, useMission, useResolveApproval, useSelectDeliveryOption } from "@/api/hooks";
+import { useCancelMission, useCorrectMission, useMission, useRequestHumanSupport, useResolveActionRequest, useResolveApproval, useSelectDeliveryOption, useUserSettings } from "@/api/hooks";
 import { demoFallbackEnabled } from "@/config/runtime";
 import { getFallbackDetail } from "@/data/fallback";
 import { statusToStep } from "@/lib/status";
@@ -39,7 +41,11 @@ export default function MissionDetailScreen() {
   const correctionMutation = useCorrectMission(missionId);
   const deliveryMutation = useSelectDeliveryOption(missionId);
   const cancelMutation = useCancelMission(missionId);
+  const actionMutation = useResolveActionRequest(missionId);
+  const supportMutation = useRequestHumanSupport(missionId);
+  const settingsQuery = useUserSettings();
   const [composerOpen, setComposerOpen] = useState(false);
+  const [liveVoiceOpen, setLiveVoiceOpen] = useState(false);
   const [correctionError, setCorrectionError] = useState<string | null>(null);
   const [deliveryError, setDeliveryError] = useState<string | null>(null);
   const [loadingOptionId, setLoadingOptionId] = useState<string | null>(null);
@@ -68,6 +74,9 @@ export default function MissionDetailScreen() {
   const isCompleted = mission.status === "completed";
   const isTerminal = ["completed", "cancelled", "failed"].includes(mission.status);
   const approvalPending = mission.status === "approval_required" && approval?.status === "pending";
+  const pendingAction = detail.action_requests?.find(
+    (action) => action.status === "pending" && action.owner === "user",
+  );
 
   const subtitle = isCompleted
     ? "Everything was completed safely"
@@ -79,8 +88,23 @@ export default function MissionDetailScreen() {
 
   const resolve = async (choice: "approve" | "review" | "cancel") => {
     if (!approval || preview) return;
+    if (choice === "approve" && (!basket || !approval.plan_hash || !approval.merchant_id)) {
+      Alert.alert(
+        "Approval needs a refresh",
+        "The guarded purchase binding is unavailable. Refresh the mission before approving.",
+      );
+      return;
+    }
     try {
-      await approvalMutation.mutateAsync({ approvalId: approval.id, choice });
+      await approvalMutation.mutateAsync({
+        approvalId: approval.id,
+        choice,
+        expectedRevision: mission.revision,
+        amount: choice === "approve" ? basket?.total : undefined,
+        currency: choice === "approve" ? basket?.currency : undefined,
+        planHash: choice === "approve" ? approval.plan_hash : undefined,
+        merchantId: choice === "approve" ? approval.merchant_id : undefined,
+      });
       if (choice === "review") Alert.alert("Basket ready for review", "The mission remains paused. Review the basket and delivery choice below, then approve when ready.");
     } catch (error) {
       Alert.alert("Couldn’t update approval", messageFor(error));
@@ -97,7 +121,7 @@ export default function MissionDetailScreen() {
   const cancelMission = async () => {
     if (preview || isTerminal) return;
     try {
-      await cancelMutation.mutateAsync();
+      await cancelMutation.mutateAsync(mission.revision);
     } catch (error) {
       Alert.alert("Couldn’t cancel mission", messageFor(error));
     }
@@ -138,6 +162,36 @@ export default function MissionDetailScreen() {
       setDeliveryError(messageFor(error, "Couldn’t change the delivery option."));
     } finally {
       setLoadingOptionId(null);
+    }
+  };
+
+  const resolveAction = async (choice: string) => {
+    if (!pendingAction || preview) return;
+    if (choice === "answer_by_voice") {
+      setCorrectionError(null);
+      setLiveVoiceOpen(true);
+      return;
+    }
+    try {
+      await actionMutation.mutateAsync({
+        actionRequestId: pendingAction.id,
+        choice,
+        expectedRevision: mission.revision,
+      });
+    } catch (error) {
+      Alert.alert("Couldn’t continue this mission", messageFor(error));
+    }
+  };
+
+  const requestSupport = async () => {
+    if (preview) return;
+    try {
+      await supportMutation.mutateAsync({
+        reason: pendingAction?.reason_code,
+        expectedRevision: mission.revision,
+      });
+    } catch (error) {
+      Alert.alert("Couldn’t request human support", messageFor(error));
     }
   };
 
@@ -184,6 +238,17 @@ export default function MissionDetailScreen() {
         </View>
       ) : null}
 
+      {pendingAction ? (
+        <View style={styles.sectionGap}>
+          <ActionRequestCard
+            action={pendingAction}
+            loading={actionMutation.isPending || supportMutation.isPending}
+            onChoose={(choice) => void resolveAction(choice)}
+            onRequestHuman={() => void requestSupport()}
+          />
+        </View>
+      ) : null}
+
       {approvalPending && basket ? (
         <View style={styles.sectionGap}>
           <ApprovalCard
@@ -224,7 +289,7 @@ export default function MissionDetailScreen() {
         <Pressable
           accessibilityRole="button"
           disabled={preview}
-          onPress={() => { setCorrectionError(null); setComposerOpen(true); }}
+          onPress={() => { setCorrectionError(null); setLiveVoiceOpen(true); }}
           style={({ pressed }) => [styles.composer, preview && styles.disabled, pressed && styles.pressed]}
         >
           <LinearGradient colors={[colors.primary, "#6036CE"]} style={styles.composerVoice}><AudioLines size={21} color={colors.text} /></LinearGradient>
@@ -240,6 +305,15 @@ export default function MissionDetailScreen() {
         error={correctionError}
         onClose={() => setComposerOpen(false)}
         onSubmit={submitCorrection}
+      />
+      <LiveVoiceSheet
+        visible={liveVoiceOpen}
+        language={settingsQuery.data?.voice_language || "pl-PL"}
+        missionId={missionId}
+        onClose={() => setLiveVoiceOpen(false)}
+        onUseText={() => { setCorrectionError(null); setComposerOpen(true); }}
+        onMissionUpdated={() => void query.refetch()}
+        onMissionRefreshRequested={() => void query.refetch()}
       />
     </AppScreen>
   );

@@ -4,9 +4,6 @@ import { X } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { colors, radii, spacing, type } from "@/theme/tokens";
 
-const example =
-  "Tomorrow I’m organizing a birthday party for ten children. Buy food, drinks and decorations for under 300 PLN, no nuts, delivered before 16:00.";
-
 export function MissionComposer({
   visible,
   loading,
@@ -24,9 +21,9 @@ export function MissionComposer({
   initialValue?: string;
   error?: string | null;
 }) {
-  const [text, setText] = useState(initialValue ?? (mode === "create" ? example : ""));
+  const [text, setText] = useState(initialValue ?? "");
   useEffect(() => {
-    if (visible) setText(initialValue ?? (mode === "create" ? example : ""));
+    if (visible) setText(initialValue ?? "");
   }, [initialValue, mode, visible]);
   const correcting = mode === "correction";
   return (
@@ -48,7 +45,7 @@ export function MissionComposer({
             multiline
             value={text}
             onChangeText={setText}
-            placeholder={correcting ? "For example: Increase the budget to 350 PLN…" : "What should I take care of?"}
+            placeholder={correcting ? "For example: Increase the budget to 350 PLN…" : "Describe your mission…"}
             placeholderTextColor={colors.textMuted}
             style={styles.input}
             autoFocus
