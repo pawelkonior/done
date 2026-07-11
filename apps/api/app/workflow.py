@@ -405,11 +405,12 @@ class MissionWorkflow:
             )
         mission_id = existing_mission_id or new_id("mis")
         contract_id = new_id("ctr")
-        basket_id = new_id("bsk")
         approval_id = new_id("apr")
-        selected_delivery_id = new_id("del")
         now = utc_now()
         contract_needs = needs_to_payload(party_needs(interpreted["participants"]))
+        portfolio_checkout = (
+            interpreted["shopping_scope"] == ShoppingScope.PARTY_SUPPLIES.value
+        )
 
         with self.database.transaction() as connection:
             if existing_mission_id is None:
@@ -659,15 +660,26 @@ class MissionWorkflow:
                 mission_id,
                 "plan.created",
                 "agent",
-                "Shopping plan created",
                 (
-                    f"Done planned {sum(line.quantity for line in catalog_plan.lines)} "
-                    f"items across {len(planned_categories)} catalog categories."
+                    "Catalog candidates prepared"
+                    if portfolio_checkout
+                    else "Shopping plan created"
+                ),
+                (
+                    "Done prepared a constraint-safe single-merchant candidate set "
+                    "for portfolio optimization."
+                    if portfolio_checkout
+                    else (
+                        f"Done planned {sum(line.quantity for line in catalog_plan.lines)} "
+                        f"items across {len(planned_categories)} catalog categories."
+                    )
                 ),
                 payload={
                     "categories": planned_categories,
-                    "estimated_items": sum(
-                        line.quantity for line in catalog_plan.lines
+                    "estimated_items": (
+                        None
+                        if portfolio_checkout
+                        else sum(line.quantity for line in catalog_plan.lines)
                     ),
                 },
             )
@@ -678,7 +690,11 @@ class MissionWorkflow:
                 "catalog.searched",
                 "tool",
                 "Catalog searched",
-                "Found a complete, constraint-safe basket from one merchant.",
+                (
+                    "Found a constraint-safe candidate set from one merchant."
+                    if portfolio_checkout
+                    else "Found a complete, constraint-safe basket from one merchant."
+                ),
                 payload={
                     "merchant_id": catalog_plan.merchant_id,
                     "candidates_considered": catalog_plan.candidates_considered,
@@ -778,92 +794,36 @@ class MissionWorkflow:
                 )
                 return self._detail(connection, mission_id)
 
-            delivery_at = self._delivery_time(interpreted["deadline"], hours_before=2)
-            selected_delivery_cost = delivery_reserve.minor
-            delivery_options = (
-                (
-                    selected_delivery_id,
-                    mission_id,
-                    catalog_plan.merchant_id,
-                    "Priority delivery",
-                    delivery_at,
-                    selected_delivery_cost,
-                    0.96,
-                    1,
-                    1,
-                ),
-                (
-                    new_id("del"),
-                    mission_id,
-                    catalog_plan.merchant_id,
-                    "Latest safe slot",
-                    self._delivery_time(interpreted["deadline"], hours_before=1),
-                    899,
-                    0.86,
-                    0,
-                    1,
-                ),
-                (
-                    new_id("del"),
-                    mission_id,
-                    catalog_plan.merchant_id,
-                    "Early backup slot",
-                    self._delivery_time(interpreted["deadline"], hours_before=3),
-                    1999,
-                    0.99,
-                    0,
-                    1,
-                ),
-            )
-            connection.executemany(
-                """
-                INSERT INTO delivery_options
-                    (id, mission_id, merchant_id, label, delivery_at, cost_cents,
-                     confidence, selected, available)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                delivery_options,
-            )
-
-            connection.execute(
-                """
-                INSERT INTO baskets
-                    (id, mission_id, merchant_id, delivery_option_id,
-                     subtotal_cents, delivery_cost_cents, total_cents,
-                     currency, status, created_at, updated_at)
-                VALUES (?, ?, ?, ?, 0, ?, ?, ?, 'proposed', ?, ?)
-                """,
-                (
-                    basket_id,
-                    mission_id,
-                    catalog_plan.merchant_id,
-                    selected_delivery_id,
-                    selected_delivery_cost,
-                    selected_delivery_cost,
-                    interpreted["currency"],
-                    now,
-                    now,
-                ),
-            )
-            for line in catalog_plan.lines:
-                product = planned_products[line.product_id]
-                connection.execute(
-                    """
-                    INSERT INTO basket_items
-                        (id, basket_id, product_id, quantity, unit_price_cents,
-                         substitution_allowed, created_at)
-                    VALUES (?, ?, ?, ?, ?, 1, ?)
-                    """,
-                    (
-                        new_id("itm"),
-                        basket_id,
-                        line.product_id,
-                        line.quantity,
-                        product["price_cents"],
-                        now,
-                    ),
+            if portfolio_checkout:
+                contract = connection.execute(
+                    "SELECT * FROM mission_contracts WHERE id = ?", (contract_id,)
+                ).fetchone()
+                assert contract is not None
+                basket_id, total = self._materialize_portfolio_basket(
+                    connection,
+                    mission_id=mission_id,
+                    contract=contract,
+                    decision=decision,
                 )
-            subtotal, total = self._recalculate_basket(connection, basket_id)
+                basket_source = "portfolio_decision"
+                basket_item_count = len(decision.selected_actions)
+            else:
+                basket_id, total = self._materialize_catalog_plan_basket(
+                    connection,
+                    mission_id=mission_id,
+                    catalog_plan=catalog_plan,
+                    planned_products=planned_products,
+                    deadline=interpreted["deadline"],
+                    currency=interpreted["currency"],
+                )
+                basket_source = "catalog_plan"
+                basket_item_count = len(catalog_plan.lines)
+            basket = connection.execute(
+                "SELECT * FROM baskets WHERE id = ?", (basket_id,)
+            ).fetchone()
+            assert basket is not None
+            subtotal = int(basket["subtotal_cents"])
+            selected_delivery_cost = int(basket["delivery_cost_cents"])
             self._set_state(connection, mission_id, "optimizing", 4)
             self._event(
                 connection,
@@ -872,12 +832,13 @@ class MissionWorkflow:
                 "agent",
                 "Basket optimized",
                 (
-                    f"Selected {len(catalog_plan.lines)} products for "
+                    f"Selected {basket_item_count} products for "
                     f"{money(total):.2f} {interpreted['currency']}."
                 ),
                 payload={
                     "basket_id": basket_id,
                     "decision_id": decision.id,
+                    "source": basket_source,
                     "subtotal": money(subtotal),
                     "delivery_cost": money(selected_delivery_cost),
                     "total": money(total),
@@ -2479,6 +2440,72 @@ class MissionWorkflow:
         merchant_id = decision.selected_merchant_id
         if merchant_id is None:
             raise WorkflowConflictError("Feasible portfolio has no selected merchant")
+        lines: list[tuple[str, int, int]] = []
+        for action in decision.selected_actions:
+            if action.action.value != "buy_now":
+                raise WorkflowConflictError("Waiting actions cannot be projected into a checkout")
+            if action.offer.merchant_id != merchant_id:
+                raise WorkflowConflictError("Portfolio actions use more than one merchant")
+            if action.offer.currency != decision.currency:
+                raise WorkflowConflictError("Portfolio action currency does not match the decision")
+            lines.append((action.offer.product_id, action.quantity, action.offer.price_cents))
+        basket_id, total = self._materialize_checkout_basket(
+            connection,
+            mission_id=mission_id,
+            merchant_id=merchant_id,
+            deadline=contract["deadline"],
+            currency=decision.currency,
+            lines=tuple(lines),
+        )
+        if total != decision.total_cents:
+            raise WorkflowConflictError(
+                "Portfolio decision total does not match the materialized checkout basket"
+            )
+        return basket_id, total
+
+    def _materialize_catalog_plan_basket(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        mission_id: str,
+        catalog_plan: CatalogPlan,
+        planned_products: dict[str, sqlite3.Row],
+        deadline: str,
+        currency: str,
+    ) -> tuple[str, int]:
+        if catalog_plan.subtotal.currency != currency:
+            raise WorkflowConflictError("Catalog plan currency does not match the mission")
+        lines: list[tuple[str, int, int]] = []
+        for line in catalog_plan.lines:
+            product = planned_products.get(line.product_id)
+            if product is None:
+                raise WorkflowConflictError("Catalog plan references an unavailable product")
+            if product["merchant_id"] != catalog_plan.merchant_id:
+                raise WorkflowConflictError("Catalog plan mixes merchant inventories")
+            if product["currency"] != currency:
+                raise WorkflowConflictError("Catalog plan mixes currencies")
+            lines.append((line.product_id, line.quantity, int(product["price_cents"])))
+        return self._materialize_checkout_basket(
+            connection,
+            mission_id=mission_id,
+            merchant_id=catalog_plan.merchant_id,
+            deadline=deadline,
+            currency=currency,
+            lines=tuple(lines),
+        )
+
+    def _materialize_checkout_basket(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        mission_id: str,
+        merchant_id: str,
+        deadline: str,
+        currency: str,
+        lines: tuple[tuple[str, int, int], ...],
+    ) -> tuple[str, int]:
+        if not lines:
+            raise WorkflowConflictError("Checkout basket requires at least one item")
         now = utc_now()
         delivery_id = new_id("del")
         delivery_options = (
@@ -2487,7 +2514,7 @@ class MissionWorkflow:
                 mission_id,
                 merchant_id,
                 "Priority delivery",
-                self._delivery_time(contract["deadline"], hours_before=2),
+                self._delivery_time(deadline, hours_before=2),
                 1299,
                 0.96,
                 1,
@@ -2498,7 +2525,7 @@ class MissionWorkflow:
                 mission_id,
                 merchant_id,
                 "Latest safe slot",
-                self._delivery_time(contract["deadline"], hours_before=1),
+                self._delivery_time(deadline, hours_before=1),
                 899,
                 0.86,
                 0,
@@ -2509,7 +2536,7 @@ class MissionWorkflow:
                 mission_id,
                 merchant_id,
                 "Express backup",
-                self._delivery_time(contract["deadline"], hours_before=3),
+                self._delivery_time(deadline, hours_before=3),
                 1999,
                 0.99,
                 0,
@@ -2531,13 +2558,11 @@ class MissionWorkflow:
             INSERT INTO baskets
                 (id, mission_id, merchant_id, delivery_option_id, subtotal_cents,
                  delivery_cost_cents, total_cents, currency, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, 0, 1299, 1299, 'PLN', 'proposed', ?, ?)
+            VALUES (?, ?, ?, ?, 0, 1299, 1299, ?, 'proposed', ?, ?)
             """,
-            (basket_id, mission_id, merchant_id, delivery_id, now, now),
+            (basket_id, mission_id, merchant_id, delivery_id, currency, now, now),
         )
-        for action in decision.selected_actions:
-            if action.action.value != "buy_now":
-                raise WorkflowConflictError("Waiting actions cannot be projected into a checkout")
+        for product_id, quantity, unit_price_cents in lines:
             connection.execute(
                 """
                 INSERT INTO basket_items
@@ -2548,9 +2573,9 @@ class MissionWorkflow:
                 (
                     new_id("itm"),
                     basket_id,
-                    action.offer.product_id,
-                    action.quantity,
-                    action.offer.price_cents,
+                    product_id,
+                    quantity,
+                    unit_price_cents,
                     now,
                 ),
             )

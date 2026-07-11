@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -78,6 +79,31 @@ def test_created_mission_contains_a_persisted_portfolio_decision(
     assert all(action["lptb"] for action in decision["actions"])
     assert all(action["quantity"] > 0 for action in decision["actions"])
     assert created["approval"]["decision_id"] == decision["id"]
+
+
+def test_created_party_basket_is_the_exact_portfolio_decision_projection(
+    client: TestClient, transcript: str
+) -> None:
+    created = _create(client, transcript)
+    decision = created["portfolio_decision"]
+    basket = created["basket"]
+    approval = created["approval"]
+
+    assert basket is not None
+    assert approval is not None
+    decision_quantities: Counter[str] = Counter()
+    for action in decision["actions"]:
+        if action["action"] == "buy_now":
+            decision_quantities[action["product_id"]] += action["quantity"]
+    basket_quantities: Counter[str] = Counter()
+    for item in basket["items"]:
+        basket_quantities[item["product_id"]] += item["quantity"]
+
+    assert decision_quantities == basket_quantities
+    assert "candles-ten" in basket_quantities
+    assert decision["selected_merchant_id"] == basket["merchant"]["id"]
+    assert round(decision["total"] * 100) == round(basket["total"] * 100)
+    assert round(approval["amount"] * 100) == round(basket["total"] * 100)
 
 
 def test_replan_creates_new_decision_and_supersedes_approval(
