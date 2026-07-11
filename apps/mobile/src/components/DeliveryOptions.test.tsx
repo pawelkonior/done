@@ -25,6 +25,7 @@ describe("DeliveryOptions", () => {
     const onSelect = jest.fn();
     const screen = await render(<DeliveryOptions options={options} onSelect={onSelect} />);
 
+    expect(screen.getByText("Select an available option before approval")).toBeTruthy();
     await fireEvent.press(screen.getByTestId("delivery-option-standard"));
 
     expect(onSelect).toHaveBeenCalledWith("standard");

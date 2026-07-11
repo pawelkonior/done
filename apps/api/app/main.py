@@ -207,9 +207,18 @@ def create_app(
         ).split(",")
         if item.strip()
     ]
+    local_origin_regex = os.getenv(
+        "DONE_CORS_ORIGIN_REGEX",
+        (
+            r"https?://(?:localhost|127\.0\.0\.1|\[::1\]|"
+            r"10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|"
+            r"172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2})(?::\d+)?"
+        ),
+    ).strip()
     application.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins,
+        allow_origin_regex=local_origin_regex or None,
         allow_credentials=False,
         allow_methods=["GET", "POST", "PUT", "PATCH", "OPTIONS"],
         allow_headers=[

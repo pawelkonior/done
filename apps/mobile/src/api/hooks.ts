@@ -3,6 +3,7 @@ import {
   cancelMission,
   correctMission,
   createTextMission,
+  createVoiceTranscriptMission,
   createVoiceMission,
   getMission,
   getRuntimeCapabilities,
@@ -13,6 +14,7 @@ import {
   listMerchants,
   resetDemo,
   requestHumanSupport,
+  replanMission,
   resolveActionRequest,
   resolveApproval,
   selectDeliveryOption,
@@ -88,6 +90,14 @@ export function useCreateVoiceMission() {
   });
 }
 
+export function useCreateVoiceTranscriptMission() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: createVoiceTranscriptMission,
+    onSuccess: () => client.invalidateQueries({ queryKey: ["missions"] }),
+  });
+}
+
 export function useResolveApproval(missionId?: string) {
   const client = useQueryClient();
   return useMutation({
@@ -143,6 +153,14 @@ export function useSelectDeliveryOption(missionId: string) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (input: DeliverySelectionInput) => selectDeliveryOption(missionId, input),
+    onSuccess: (detail) => refreshMissionQueries(client, missionId, detail),
+  });
+}
+
+export function useReplanMission(missionId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (expectedRevision: number) => replanMission(missionId, expectedRevision),
     onSuccess: (detail) => refreshMissionQueries(client, missionId, detail),
   });
 }

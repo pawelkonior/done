@@ -25,7 +25,7 @@ export function DeliveryOptions({
         <CalendarClock size={22} color={colors.primaryBright} />
         <View>
           <Text style={styles.title}>Delivery options</Text>
-          <Text style={styles.subtitle}>Speed, price and reliability compared</Text>
+          <Text style={styles.subtitle}>Select an available option before approval</Text>
         </View>
       </View>
       <View style={styles.options} accessibilityRole="radiogroup">

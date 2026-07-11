@@ -9,7 +9,7 @@ import {
   Text,
   View,
 } from "react-native";
-import { AudioLines, Check, Keyboard, Mic2, RefreshCw, Sparkles, X } from "lucide-react-native";
+import { AudioLines, Check, RefreshCw, Sparkles, X } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { getRealtimeClientSecret } from "@/api/client";
 import type { CreateMissionResponse, MissionDetail } from "@/types/domain";
@@ -79,7 +79,6 @@ export function LiveVoiceSheet({
   visible,
   language,
   onClose,
-  onUseText,
   onSubmitTranscript,
   onMissionCreated,
   missionId: activeMissionId,
@@ -89,7 +88,6 @@ export function LiveVoiceSheet({
   visible: boolean;
   language: string;
   onClose: () => void;
-  onUseText: () => void;
   onSubmitTranscript?: (transcript: string) => Promise<CreateMissionResponse>;
   onMissionCreated?: (missionId: string) => void;
   missionId?: string;
@@ -143,6 +141,7 @@ export function LiveVoiceSheet({
   const waitForCurrentVoiceEvidence = useCallback(() => {
     const current = latestTurnTranscriptRef.current.trim();
     if (current.length >= 3) return Promise.resolve(current);
+    if (!currentVoiceItemIdRef.current) return Promise.resolve(undefined);
     return new Promise<string | undefined>((resolve) => {
       let settled = false;
       const complete = (transcript?: string) => {
@@ -263,8 +262,7 @@ export function LiveVoiceSheet({
     setStatus("submitting");
     setError(null);
     try {
-      const needsCurrentVoiceEvidence = command.name === "approve_purchase"
-        || (command.name === "choose_recovery" && command.choice === "answer_by_voice");
+      const needsCurrentVoiceEvidence = !["get_status", "confirm_contract"].includes(command.name);
       const voiceTranscript = needsCurrentVoiceEvidence
         ? await waitForCurrentVoiceEvidence()
         : latestTurnTranscriptRef.current;
@@ -349,7 +347,29 @@ export function LiveVoiceSheet({
 
     const command = parseRealtimeCommand(event);
     if (command?.name === "submit_mission") {
-      void submitMission(command.transcript, command.callId);
+      void (async () => {
+        // Input transcription can complete after response.done. Wait for the
+        // committed microphone turn instead of trusting the model argument or
+        // rejecting a valid utterance because of event ordering.
+        const currentTurn = await waitForCurrentVoiceEvidence();
+        if (handledCallsRef.current.has(command.callId)) return;
+        const capturedTranscript = transcriptBufferRef.current.finalText().trim();
+        if (!currentTurn || capturedTranscript.length < 3) {
+          handledCallsRef.current.add(command.callId);
+          const message = "I couldn’t verify a spoken transcript. Please say the mission again.";
+          setStatus("ready");
+          setInputStatus("error");
+          setTranscriptError(message);
+          replyToTool(command.callId, {
+            ok: false,
+            error: { code: "VOICE_TRANSCRIPT_UNAVAILABLE", message },
+          }, false);
+          return;
+        }
+        // The mission API receives only verbatim speech transcription. The
+        // model-generated tool argument is a control signal, never source data.
+        await submitMission(capturedTranscript, command.callId);
+      })();
       return;
     }
     if (command) {
@@ -369,7 +389,7 @@ export function LiveVoiceSheet({
         setTranscriptError(null);
       }
     }
-  }, [rebuildTranscript, runMissionCommand, submitMission]);
+  }, [rebuildTranscript, replyToTool, runMissionCommand, submitMission, waitForCurrentVoiceEvidence]);
 
   useEffect(() => {
     if (!visible) return;
@@ -534,18 +554,6 @@ export function LiveVoiceSheet({
                 </LinearGradient>
               </Pressable>
             ) : null}
-            {!createdMissionId ? (
-              <View style={styles.fallbackRow}>
-                <Pressable onPress={close} style={({ pressed }) => [styles.fallbackButton, pressed && styles.pressed]}>
-                  <Mic2 size={16} color={colors.textSecondary} />
-                  <Text style={styles.fallbackText}>{activeMissionId ? "Close" : "Record instead"}</Text>
-                </Pressable>
-                <Pressable onPress={() => { close(); onUseText(); }} style={({ pressed }) => [styles.fallbackButton, pressed && styles.pressed]}>
-                  <Keyboard size={16} color={colors.textSecondary} />
-                  <Text style={styles.fallbackText}>Type instead</Text>
-                </Pressable>
-              </View>
-            ) : null}
           </View>
         </View>
       </View>
@@ -594,8 +602,5 @@ const styles = StyleSheet.create({
   primaryText: { ...type.bodyMedium, color: colors.text },
   secondaryButton: { minHeight: 50, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.xs, borderRadius: radii.md, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: "rgba(155,92,255,0.08)" },
   secondaryText: { ...type.smallMedium, color: colors.primaryBright },
-  fallbackRow: { flexDirection: "row", gap: spacing.sm },
-  fallbackButton: { minHeight: 44, flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderRadius: radii.md, borderWidth: 1, borderColor: colors.hairline },
-  fallbackText: { ...type.caption, color: colors.textSecondary },
   pressed: { opacity: 0.7 },
 });

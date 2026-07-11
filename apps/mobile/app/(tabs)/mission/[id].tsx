@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { AudioLines, Check, Send, Sparkles, WifiOff } from "lucide-react-native";
+import { AudioLines, Check, Send, Sparkles } from "lucide-react-native";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { AppScreen } from "@/components/AppScreen";
@@ -14,16 +14,13 @@ import { EventTimeline } from "@/components/EventTimeline";
 import { GlassCard } from "@/components/GlassCard";
 import { IconTile } from "@/components/IconTile";
 import { MetricsGrid } from "@/components/MetricsGrid";
-import { MissionComposer } from "@/components/MissionComposer";
 import { LiveVoiceSheet } from "@/components/LiveVoiceSheet";
 import { MissionTimeline } from "@/components/MissionTimeline";
 import { ProgressBar } from "@/components/ProgressBar";
 import { RecoveryBanner } from "@/components/RecoveryBanner";
 import { ScreenState } from "@/components/ScreenState";
 import { StatusPill } from "@/components/StatusPill";
-import { useCancelMission, useCorrectMission, useMission, useRequestHumanSupport, useResolveActionRequest, useResolveApproval, useSelectDeliveryOption, useUserSettings } from "@/api/hooks";
-import { demoFallbackEnabled } from "@/config/runtime";
-import { getFallbackDetail } from "@/data/fallback";
+import { useCancelMission, useMission, useReplanMission, useRequestHumanSupport, useResolveActionRequest, useSelectDeliveryOption, useUserSettings } from "@/api/hooks";
 import { statusToStep } from "@/lib/status";
 import { colors, radii, spacing, type } from "@/theme/tokens";
 
@@ -35,22 +32,17 @@ export default function MissionDetailScreen() {
   const missionId = id ?? "";
   const router = useRouter();
   const query = useMission(id);
-  const approvalMutation = useResolveApproval(id);
-  const correctionMutation = useCorrectMission(missionId);
   const deliveryMutation = useSelectDeliveryOption(missionId);
   const cancelMutation = useCancelMission(missionId);
+  const replanMutation = useReplanMission(missionId);
   const actionMutation = useResolveActionRequest(missionId);
   const supportMutation = useRequestHumanSupport(missionId);
   const settingsQuery = useUserSettings();
-  const [composerOpen, setComposerOpen] = useState(false);
   const [liveVoiceOpen, setLiveVoiceOpen] = useState(false);
-  const [correctionError, setCorrectionError] = useState<string | null>(null);
   const [deliveryError, setDeliveryError] = useState<string | null>(null);
   const [loadingOptionId, setLoadingOptionId] = useState<string | null>(null);
 
-  const fallbackDetail = demoFallbackEnabled && query.isError ? getFallbackDetail(missionId || "birthday-demo") : null;
-  const detail = query.data ?? fallbackDetail;
-  const preview = Boolean(fallbackDetail && !query.data);
+  const detail = query.data;
 
   if (!detail) {
     return (
@@ -77,47 +69,15 @@ export default function MissionDetailScreen() {
   );
 
   const subtitle = isCompleted
-    ? "Everything was completed safely"
+    ? mission.subtitle
     : mission.status === "recovering"
       ? "Repairing the plan automatically"
       : approvalPending
         ? "Your optimized basket is ready"
         : mission.subtitle;
 
-  const resolve = async (choice: "approve" | "review" | "cancel") => {
-    if (!approval || preview) return;
-    if (choice === "approve" && (!basket || !approval.plan_hash || !approval.merchant_id)) {
-      Alert.alert(
-        "Approval needs a refresh",
-        "The guarded purchase binding is unavailable. Refresh the mission before approving.",
-      );
-      return;
-    }
-    try {
-      await approvalMutation.mutateAsync({
-        approvalId: approval.id,
-        choice,
-        expectedRevision: mission.revision,
-        amount: choice === "approve" ? basket?.total : undefined,
-        currency: choice === "approve" ? basket?.currency : undefined,
-        planHash: choice === "approve" ? approval.plan_hash : undefined,
-        merchantId: choice === "approve" ? approval.merchant_id : undefined,
-      });
-      if (choice === "review") Alert.alert("Basket ready for review", "The mission remains paused. Review the basket and delivery choice below, then approve when ready.");
-    } catch (error) {
-      Alert.alert("Couldn’t update approval", messageFor(error));
-    }
-  };
-
-  const confirmApprovalCancel = () => {
-    Alert.alert("Cancel this mission?", "The proposed basket will not be purchased.", [
-      { text: "Keep mission", style: "cancel" },
-      { text: "Cancel mission", style: "destructive", onPress: () => void resolve("cancel") },
-    ]);
-  };
-
   const cancelMission = async () => {
-    if (preview || isTerminal) return;
+    if (isTerminal) return;
     try {
       await cancelMutation.mutateAsync(mission.revision);
     } catch (error) {
@@ -132,26 +92,25 @@ export default function MissionDetailScreen() {
     ]);
   };
 
+  const replan = async () => {
+    try {
+      await replanMutation.mutateAsync(mission.revision);
+    } catch (error) {
+      Alert.alert("Couldn’t replan mission", messageFor(error));
+    }
+  };
+
   const showMenu = () => {
     Alert.alert("Mission options", undefined, [
       { text: "Refresh", onPress: () => void query.refetch() },
-      ...(!isTerminal && !preview ? [{ text: "Cancel mission", style: "destructive" as const, onPress: confirmCancel }] : []),
+      ...(!isTerminal ? [{ text: "Replan mission", onPress: () => void replan() }] : []),
+      ...(!isTerminal ? [{ text: "Cancel mission", style: "destructive" as const, onPress: confirmCancel }] : []),
       { text: "Close", style: "cancel" },
     ]);
   };
 
-  const submitCorrection = async (correction: string) => {
-    setCorrectionError(null);
-    try {
-      await correctionMutation.mutateAsync({ correction, expected_revision: mission.revision });
-      setComposerOpen(false);
-    } catch (error) {
-      setCorrectionError(messageFor(error, "Couldn’t update this mission."));
-    }
-  };
-
   const selectDelivery = async (optionId: string) => {
-    if (preview || isTerminal || deliveryOptions.find((option) => option.id === optionId)?.selected) return;
+    if (isTerminal || deliveryOptions.find((option) => option.id === optionId)?.selected) return;
     setDeliveryError(null);
     setLoadingOptionId(optionId);
     try {
@@ -164,9 +123,8 @@ export default function MissionDetailScreen() {
   };
 
   const resolveAction = async (choice: string) => {
-    if (!pendingAction || preview) return;
+    if (!pendingAction) return;
     if (choice === "answer_by_voice") {
-      setCorrectionError(null);
       setLiveVoiceOpen(true);
       return;
     }
@@ -182,7 +140,6 @@ export default function MissionDetailScreen() {
   };
 
   const requestSupport = async () => {
-    if (preview) return;
     try {
       await supportMutation.mutateAsync({
         reason: pendingAction?.reason_code,
@@ -196,13 +153,6 @@ export default function MissionDetailScreen() {
   return (
     <AppScreen testID="mission-detail-screen">
       <DetailHeader title="Mission Details" onBack={() => router.back()} onMore={showMenu} />
-
-      {preview ? (
-        <View style={styles.previewBanner}>
-          <WifiOff size={16} color={colors.warning} />
-          <Text style={styles.previewText}>Demo fallback is enabled. This preview is read-only until the API reconnects.</Text>
-        </View>
-      ) : null}
 
       <View style={styles.hero}>
         <IconTile icon={mission.icon ?? "cake"} accent={mission.accent ?? "violet"} size={82} />
@@ -222,7 +172,7 @@ export default function MissionDetailScreen() {
           <View style={styles.completedCheck}><Check size={28} color={colors.backgroundDeep} strokeWidth={3} /></View>
           <View style={styles.completedText}>
             <Text style={styles.completedTitle}>Mission completed</Text>
-            <Text style={styles.completedSubtitle}>Say it once. Consider it done.</Text>
+            <Text style={styles.completedSubtitle}>{mission.latest_update}</Text>
           </View>
           <Sparkles size={25} color={colors.success} />
         </LinearGradient>
@@ -246,10 +196,10 @@ export default function MissionDetailScreen() {
           <ApprovalCard
             amount={basket.total}
             currency={basket.currency}
-            loading={approvalMutation.isPending}
-            onApprove={() => void resolve("approve")}
-            onReview={() => void resolve("review")}
-            onCancel={confirmApprovalCancel}
+            loading={false}
+            onApprove={() => setLiveVoiceOpen(true)}
+            onReview={() => setLiveVoiceOpen(true)}
+            onCancel={() => setLiveVoiceOpen(true)}
           />
         </View>
       ) : null}
@@ -268,7 +218,7 @@ export default function MissionDetailScreen() {
             options={deliveryOptions}
             onSelect={(optionId) => void selectDelivery(optionId)}
             loadingOptionId={loadingOptionId}
-            disabled={preview || isTerminal}
+            disabled={isTerminal}
             error={deliveryError}
           />
         </View>
@@ -279,30 +229,20 @@ export default function MissionDetailScreen() {
       {!isTerminal ? (
         <Pressable
           accessibilityRole="button"
-          disabled={preview}
-          onPress={() => { setCorrectionError(null); setLiveVoiceOpen(true); }}
-          style={({ pressed }) => [styles.composer, preview && styles.disabled, pressed && styles.pressed]}
+          onPress={() => setLiveVoiceOpen(true)}
+          style={({ pressed }) => [styles.composer, pressed && styles.pressed]}
         >
           <LinearGradient colors={[colors.primary, "#6036CE"]} style={styles.composerVoice}><AudioLines size={21} color={colors.text} /></LinearGradient>
-          <Text style={styles.composerText}>Correct or add to this mission…</Text>
+          <Text style={styles.composerText}>Speak to correct or continue this mission…</Text>
           <View style={styles.send}><Send size={18} color={colors.text} /></View>
         </Pressable>
       ) : null}
 
-      <MissionComposer
-        visible={composerOpen}
-        mode="correction"
-        loading={correctionMutation.isPending}
-        error={correctionError}
-        onClose={() => setComposerOpen(false)}
-        onSubmit={submitCorrection}
-      />
       <LiveVoiceSheet
         visible={liveVoiceOpen}
         language={settingsQuery.data?.voice_language || "pl-PL"}
         missionId={missionId}
         onClose={() => setLiveVoiceOpen(false)}
-        onUseText={() => { setCorrectionError(null); setComposerOpen(true); }}
         onMissionUpdated={() => void query.refetch()}
         onMissionRefreshRequested={() => void query.refetch()}
       />
@@ -311,8 +251,6 @@ export default function MissionDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  previewBanner: { minHeight: 48, flexDirection: "row", alignItems: "center", gap: spacing.xs, borderRadius: radii.md, padding: spacing.sm, marginBottom: spacing.md, borderWidth: 1, borderColor: "rgba(255,184,77,0.25)", backgroundColor: "rgba(255,184,77,0.07)" },
-  previewText: { ...type.caption, color: colors.warning, flex: 1 },
   hero: { flexDirection: "row", gap: spacing.md, alignItems: "center", marginBottom: spacing.sm },
   heroText: { flex: 1, minWidth: 0 },
   heroTitle: { ...type.h1, fontSize: 26, lineHeight: 31, color: colors.text },

@@ -34,6 +34,10 @@ def approval_payload(detail: dict, choice: str = "approve") -> dict:
                 "currency": approval["currency"],
                 "plan_hash": approval["plan_hash"],
                 "merchant_id": approval["merchant_id"],
+                "voice_transcript": (
+                    f"Tak, zatwierdzam {approval['amount']} "
+                    f"{approval['currency']} u {approval['merchant_id']}."
+                ),
             }
         )
     return payload
@@ -201,6 +205,46 @@ def test_approval_runs_two_recoveries_and_completes(
     assert event_types.index("payment.declined") < event_types.index("payment.rerouted")
 
 
+def test_purchase_approval_requires_positive_spoken_amount_and_currency(
+    client: TestClient, transcript: str
+) -> None:
+    created = create_mission(client, transcript)
+    endpoint = f"/v1/approvals/{created['approval']['id']}/resolve"
+    valid = approval_payload(created)
+
+    missing = dict(valid)
+    missing.pop("voice_transcript")
+    negative = {
+        **valid,
+        "voice_transcript": "Nie, nie zatwierdzam 300 PLN u merchant-b.",
+    }
+    wrong_amount = {
+        **valid,
+        "voice_transcript": "Tak, zatwierdzam 1 PLN u merchant-b.",
+    }
+    wrong_merchant = {
+        **valid,
+        "voice_transcript": "Tak, zatwierdzam 300 PLN u merchant-a.",
+    }
+
+    for payload in (missing, negative, wrong_amount, wrong_merchant):
+        response = client.post(endpoint, json=payload)
+        assert response.status_code == 409, response.text
+
+    detail = client.get(f"/v1/missions/{created['mission']['id']}").json()
+    assert detail["approval"]["status"] == "pending"
+    with client.app.state.database.reader() as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) AS count FROM inventory_reservations"
+        ).fetchone()["count"] == 0
+        assert connection.execute(
+            "SELECT COUNT(*) AS count FROM virtual_card_requests"
+        ).fetchone()["count"] == 0
+        assert connection.execute(
+            "SELECT COUNT(*) AS count FROM payment_attempts"
+        ).fetchone()["count"] == 0
+
+
 def test_approval_is_idempotent(client: TestClient, transcript: str) -> None:
     created = create_mission(client, transcript)
     approval_id = created["approval"]["id"]
@@ -289,12 +333,27 @@ def test_cancel_and_reset(client: TestClient, transcript: str) -> None:
     mission_id = created["mission"]["id"]
     missing_revision = client.post(f"/v1/missions/{mission_id}/cancel")
     assert missing_revision.status_code == 409
+    support = client.post(
+        f"/v1/missions/{mission_id}/support",
+        json={
+            "reason": "Please stop and close every pending action",
+            "expected_revision": created["mission"]["revision"],
+        },
+    )
+    assert support.status_code == 200
+    assert any(
+        action["status"] == "pending" for action in support.json()["action_requests"]
+    )
     cancelled = client.post(
         f"/v1/missions/{mission_id}/cancel",
-        json={"expected_revision": created["mission"]["revision"]},
+        json={"expected_revision": support.json()["mission"]["revision"]},
     )
     assert cancelled.status_code == 200
     assert cancelled.json()["mission"]["status"] == "cancelled"
+    assert all(
+        action["status"] == "resolved"
+        for action in cancelled.json()["action_requests"]
+    )
 
     reset = client.post("/v1/demo/reset")
     assert reset.status_code == 200

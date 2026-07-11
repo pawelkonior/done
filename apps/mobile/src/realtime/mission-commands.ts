@@ -191,9 +191,18 @@ export async function executeMissionRealtimeCommand(
     });
   }
 
+  if (!voiceEvidence) {
+    return reject(
+      "VOICE_EVIDENCE_REQUIRED",
+      "A fresh transcribed voice turn is required for this mission change.",
+    );
+  }
+
   if (command.name === "correct_mission") {
     const detail = await api.correctMission(context.missionId, {
-      correction: command.correction,
+      // The model argument selects the command. Mission facts come only from
+      // the user's current microphone transcript.
+      correction: voiceEvidence,
       expected_revision: revision,
     });
     return success("mission_corrected", detail);
@@ -237,12 +246,6 @@ export async function executeMissionRealtimeCommand(
         "The spoken amount or currency does not match the current basket.",
       );
     }
-    if (!voiceEvidence) {
-      return reject(
-        "VOICE_EVIDENCE_REQUIRED",
-        "A transcribed spoken approval is required before the purchase can continue.",
-      );
-    }
     const detail = await api.resolveApproval(approval.id, "approve", {
       expected_revision: revision,
       amount: basket.total,
@@ -282,9 +285,6 @@ export async function executeMissionRealtimeCommand(
     if (!action.options.some((option) => option.id === command.choice)) {
       return reject("ACTION_CHOICE_NOT_ALLOWED", "That choice is not available for the current action.");
     }
-    if (command.choice === "answer_by_voice" && !voiceEvidence) {
-      return reject("VOICE_EVIDENCE_REQUIRED", "Please answer the clarification aloud before continuing.");
-    }
     const detail = await api.resolveActionRequest(action.id, {
       choice: command.choice,
       expected_revision: revision,
@@ -300,7 +300,7 @@ export async function executeMissionRealtimeCommand(
 
   if (command.name === "request_human") {
     const detail = await api.requestHumanSupport(context.missionId, {
-      reason: command.reason,
+      reason: voiceEvidence.slice(0, 500),
       expected_revision: revision,
     });
     return success("human_support_requested", detail);

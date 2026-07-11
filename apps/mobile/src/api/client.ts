@@ -1,5 +1,6 @@
 import { Platform } from "react-native";
 import { File } from "expo-file-system";
+import Constants from "expo-constants";
 import type {
   ActionRequest,
   ApprovalRequest,
@@ -29,7 +30,16 @@ import type {
   VoiceMissionInput,
 } from "@/types/domain";
 
-const defaultHost = Platform.OS === "android" ? "10.0.2.2" : "localhost";
+function localDevelopmentHost() {
+  if (Platform.OS === "web" && typeof globalThis.location?.hostname === "string") {
+    return globalThis.location.hostname || "localhost";
+  }
+  const expoHost = Constants.expoConfig?.hostUri?.split(":", 1)[0]?.trim();
+  if (expoHost) return expoHost;
+  return Platform.OS === "android" ? "10.0.2.2" : "localhost";
+}
+
+const defaultHost = localDevelopmentHost();
 export const API_URL =
   process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, "") ?? `http://${defaultHost}:8001`;
 
@@ -48,15 +58,23 @@ export class ApiError extends Error {
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const accessToken = apiAccessToken();
-  const response = await fetch(`${API_URL}${path}`, {
-    ...init,
-    headers: {
-      Accept: "application/json",
-      ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
-      ...init?.headers,
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      ...init,
+      headers: {
+        Accept: "application/json",
+        ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
+        ...init?.headers,
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
+    });
+  } catch {
+    throw new ApiError(
+      `Can't reach the Done server at ${API_URL}. Check that the backend is running and this device is on the same network.`,
+      0,
+    );
+  }
 
   if (!response.ok) {
     let message = `Request failed (${response.status})`;
@@ -453,6 +471,31 @@ export async function createTextMission(input: string | TextMissionInput) {
   } satisfies CreateMissionResponse;
 }
 
+/**
+ * Persists a transcript produced by the live microphone session as voice
+ * input. It deliberately uses the voice endpoint so audit/event projections
+ * cannot mistake a Realtime conversation for typed intake.
+ */
+export async function createVoiceTranscriptMission(input: TextMissionInput) {
+  const payload = {
+    transcript: input.transcript,
+    locale: input.locale ?? "en-PL",
+    timezone: input.timezone ?? "Europe/Warsaw",
+  };
+  const raw = await apiFetch<JsonRecord>("/v1/missions/voice", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  const detail = normalizeDetail(raw);
+  return {
+    mission_id: detail.mission.id,
+    status: detail.mission.status,
+    transcript: detail.mission.raw_voice_transcript,
+    confirmation: asString(raw.confirmation, "I understood your mission. I’ll take care of it."),
+    detail,
+  } satisfies CreateMissionResponse;
+}
+
 function audioMetadata(uri: string) {
   const clean = uri.split("?")[0] ?? uri;
   const extension = clean.match(/\.([a-zA-Z0-9]+)$/)?.[1]?.toLowerCase() ?? "m4a";
@@ -512,6 +555,14 @@ export async function selectDeliveryOption(missionId: string, input: DeliverySel
   const raw = await apiFetch<JsonRecord>(`/v1/missions/${missionId}/delivery-option`, {
     method: "PUT",
     body: JSON.stringify(input),
+  });
+  return normalizeDetail(raw);
+}
+
+export async function replanMission(missionId: string, expectedRevision: number) {
+  const raw = await apiFetch<JsonRecord>(`/v1/missions/${missionId}/replan`, {
+    method: "POST",
+    body: JSON.stringify({ expected_revision: expectedRevision }),
   });
   return normalizeDetail(raw);
 }
