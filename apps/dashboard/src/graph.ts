@@ -1,5 +1,5 @@
 import { NODES } from "./mapping";
-import type { NodeId } from "./types";
+import type { NodeId, NodeSubtitles } from "./types";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const VIEW_W = 1240;
@@ -13,6 +13,7 @@ const EDGE_Y = NODE_Y + NODE_H / 2;
 
 export interface Graph {
   setActive(node: NodeId, warn: boolean): void;
+  setNodeSubtitles(subtitles: NodeSubtitles): void;
   flashFeedback(): void;
   reset(): void;
 }
@@ -65,6 +66,7 @@ export function createGraph(container: HTMLElement): Graph {
   svg.appendChild(feedbackLabel);
 
   const groups = new Map<NodeId, SVGGElement>();
+  const subtitles = new Map<NodeId, SVGTextElement>();
   NODES.forEach((spec, index) => {
     const x = nodeX(index);
     const group = el("g", { class: "node", "data-state": "idle" });
@@ -79,6 +81,7 @@ export function createGraph(container: HTMLElement): Graph {
     sub.textContent = spec.sub;
     group.appendChild(sub);
     groups.set(spec.id, group);
+    subtitles.set(spec.id, sub);
     svg.appendChild(group);
   });
 
@@ -100,8 +103,16 @@ export function createGraph(container: HTMLElement): Graph {
     });
   }
 
+  function setNodeSubtitles(values: NodeSubtitles): void {
+    for (const spec of NODES) {
+      const subtitle = subtitles.get(spec.id);
+      if (subtitle) subtitle.textContent = values[spec.id] ?? spec.sub;
+    }
+  }
+
   return {
     setActive(node, warn) { apply(order.indexOf(node), warn); },
+    setNodeSubtitles,
     flashFeedback() {
       feedback.classList.add("on");
       window.clearTimeout(feedbackTimer);
@@ -109,6 +120,7 @@ export function createGraph(container: HTMLElement): Graph {
     },
     reset() {
       apply(-1, false);
+      setNodeSubtitles({});
       feedback.classList.remove("on");
     },
   };

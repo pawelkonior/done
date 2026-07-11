@@ -170,16 +170,120 @@ html, body {
 .stage {
   min-height: 0;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: stretch;
+  gap: 10px;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 12px;
 }
 
-.graph { width: 100%; max-width: 1400px; height: 100%; }
+.graph { flex: 1; min-height: 180px; width: 100%; max-width: 1400px; }
 .graph svg { width: 100%; height: 100%; }
+
+/* ---------- cart connected to workflow ---------- */
+
+.basket-flow {
+  flex: none;
+  max-height: 190px;
+  padding-top: 9px;
+  overflow: auto;
+  border-top: 1px solid var(--line);
+}
+
+.basket-flow-empty {
+  display: grid;
+  min-height: 34px;
+  align-items: center;
+  color: var(--ink-faint);
+  font-size: 12px;
+}
+
+.basket-flow-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 2px 8px;
+}
+
+.basket-flow-heading strong {
+  color: var(--ink);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.basket-flow-heading span { color: var(--ink-faint); font-size: 11px; }
+
+.basket-flow-track {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(118px, 1fr));
+  gap: 5px;
+  min-width: 870px;
+}
+
+.portfolio-node {
+  min-height: 68px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.portfolio-node[data-node="model"],
+.portfolio-node[data-node="guardrails"],
+.portfolio-node[data-node="purchase"],
+.portfolio-node[data-node="result"] { border-color: var(--line-strong); }
+
+.portfolio-node-name {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--ink-faint);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.portfolio-cards { display: grid; gap: 4px; }
+
+.portfolio-card {
+  display: grid;
+  gap: 2px;
+  padding: 5px 6px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+
+.portfolio-card strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.portfolio-card span {
+  color: var(--ink-dim);
+  font-family: var(--mono);
+  font-size: 9px;
+}
+
+.portfolio-card[data-state="awaiting_approval"],
+.portfolio-card[data-state="ready_to_purchase"] { border-color: rgba(255, 174, 51, 0.48); }
+.portfolio-card[data-state="awaiting_approval"] span,
+.portfolio-card[data-state="ready_to_purchase"] span { color: var(--warn); }
+.portfolio-card[data-state="payment_failed"] { border-color: rgba(255, 93, 115, 0.7); background: rgba(255, 93, 115, 0.1); }
+.portfolio-card[data-state="payment_failed"] span { color: var(--bad); }
+.portfolio-card[data-state="paid"],
+.portfolio-card[data-state="purchased"] { border-color: rgba(78, 240, 196, 0.5); }
+.portfolio-card[data-state="paid"] span,
+.portfolio-card[data-state="purchased"] span { color: var(--mint); }
+.portfolio-card[data-state="recovered"] { border-color: rgba(255, 174, 51, 0.58); }
+.portfolio-card[data-state="recovered"] span { color: var(--warn); }
 
 /* ---------- mission detail ---------- */
 

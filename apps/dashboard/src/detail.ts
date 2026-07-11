@@ -2,7 +2,7 @@ import type { MissionDetail, PaymentAttempt } from "./types";
 
 export interface DetailPanel {
   update(detail: MissionDetail): void;
-  showReplay(eventType: string): void;
+  showReplay(eventType: string): MissionDetail;
   reset(): void;
 }
 
@@ -22,7 +22,7 @@ const ENGLISH_PRODUCT_NAMES: Record<string, string> = {
   "table-plates": "Paper plates",
 };
 
-function productName(productId: string | null | undefined): string {
+export function productName(productId: string | null | undefined): string {
   if (productId && ENGLISH_PRODUCT_NAMES[productId]) return ENGLISH_PRODUCT_NAMES[productId];
   const identifier = productId?.replace(/^product-/, "").toUpperCase() || "UNSPECIFIED";
   return `Catalog item ${identifier}`;
@@ -343,7 +343,7 @@ function replayDetail(eventType: string): MissionDetail {
     },
     basket: {
       merchant: { id: "party-market", name: "Party Market", reliability_score: 0.96 },
-      item_count: 6,
+      item_count: 9,
       total: 128.41,
       currency: "PLN",
       status: ordered ? "ordered" : "planned",
@@ -369,7 +369,9 @@ export function createDetailPanel(container: HTMLElement): DetailPanel {
       render(container, detail);
     },
     showReplay(eventType) {
-      render(container, replayDetail(eventType));
+      const detail = replayDetail(eventType);
+      render(container, detail);
+      return detail;
     },
     reset() {
       container.replaceChildren();

@@ -5,6 +5,7 @@ import { displayMissionTitle } from "./copy";
 import { createDetailPanel, simulateLineItemPaymentFailure } from "./detail";
 import { createGraph } from "./graph";
 import { EVENT_NODE, FEEDBACK_EVENTS, WARN_EVENTS, WARN_SEVERITIES } from "./mapping";
+import { createPortfolioFlow } from "./portfolio";
 import { REPLAY_MISSION_TITLE, REPLAY_SCRIPT } from "./replay";
 import { createTicker } from "./ticker";
 import type { LoopEvent, MissionDetail } from "./types";
@@ -15,6 +16,7 @@ const MISSIONS_POLL_MS = 5000;
 type Mode = "connecting" | "live" | "replay";
 
 const graph = createGraph(document.getElementById("graph")!);
+const portfolioFlow = createPortfolioFlow(document.getElementById("basket-flow")!);
 const ticker = createTicker(document.getElementById("ticker")!);
 const detailPanel = createDetailPanel(document.getElementById("detail-panel")!);
 const missionTitleEl = document.getElementById("mission-title")!;
@@ -63,6 +65,7 @@ function dispatch(event: LoopEvent): void {
 
 function resetView(): void {
   graph.reset();
+  portfolioFlow.reset();
   ticker.reset();
   detailPanel.reset();
   latestDetail = null;
@@ -83,7 +86,9 @@ function updateSimulationButton(): void {
 
 function renderDetail(detail: MissionDetail): void {
   latestDetail = detail;
-  detailPanel.update(lineItemFailureSimulation ? simulateLineItemPaymentFailure(detail) : detail);
+  const renderedDetail = lineItemFailureSimulation ? simulateLineItemPaymentFailure(detail) : detail;
+  detailPanel.update(renderedDetail);
+  graph.setNodeSubtitles(portfolioFlow.update(renderedDetail));
   updateSimulationButton();
 }
 
@@ -95,7 +100,7 @@ function stopReplay(): void {
 function scheduleReplayStep(index: number): void {
   const step = REPLAY_SCRIPT[index % REPLAY_SCRIPT.length];
   if (index > 0 && index % REPLAY_SCRIPT.length === 0) resetView();
-  detailPanel.showReplay(step.type);
+  graph.setNodeSubtitles(portfolioFlow.update(detailPanel.showReplay(step.type)));
   dispatch({ ...step, created_at: new Date().toISOString() });
   replayTimer = window.setTimeout(() => scheduleReplayStep(index + 1), step.delay);
 }
@@ -107,7 +112,7 @@ function enterReplay(reason: string): void {
   resetView();
   setMode("replay", reason);
   setMission(REPLAY_MISSION_TITLE, null);
-  detailPanel.showReplay("mission.created");
+  graph.setNodeSubtitles(portfolioFlow.update(detailPanel.showReplay("mission.created")));
   scheduleReplayStep(0);
 }
 

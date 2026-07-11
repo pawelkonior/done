@@ -7,6 +7,8 @@ export type NodeId =
   | "purchase"
   | "result";
 
+export type NodeSubtitles = Partial<Record<NodeId, string>>;
+
 export interface LoopEvent {
   type: string;
   title: string;
