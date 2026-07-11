@@ -60,6 +60,30 @@ class HumanSupportRequest(BaseModel):
     expected_revision: int | None = Field(default=None, ge=1)
 
 
+class ProductNotBuyableRequest(BaseModel):
+    """Agent report that a product in the current plan cannot be purchased."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    product_id: str = Field(min_length=1, max_length=200)
+    reason: Literal[
+        "out_of_stock",
+        "merchant_rejected",
+        "checkout_unavailable",
+        "policy_restriction",
+        "unknown",
+    ]
+    expected_revision: int | None = Field(default=None, ge=1)
+
+    @field_validator("product_id")
+    @classmethod
+    def normalize_product_id(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("product_id cannot be empty")
+        return normalized
+
+
 class FailureInjectionRequest(BaseModel):
     mission_id: str
     failure_type: Literal[

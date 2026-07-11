@@ -502,6 +502,29 @@ constraint, operacja kończy się `409` zamiast automatycznego re-planningu.
 Brak body. Response `200` to `MissionDetail` ze statusem `cancelled`. Ponowne
 cancel jest idempotentne. Misji `completed`/`failed` nie można anulować (`409`).
 
+### `POST /v1/missions/{mission_id}/product-not-buyable`
+
+Callback dla agenta, gdy produkt z aktualnego koszyka nie może zostać kupiony:
+
+```json
+{
+  "product_id": "prd_...",
+  "reason": "out_of_stock",
+  "expected_revision": 7
+}
+```
+
+`reason`: `out_of_stock`, `merchant_rejected`, `checkout_unavailable`,
+`policy_restriction` albo `unknown`. Endpoint wymaga dokładnej aktualnej
+`revision` i produktu należącego do najnowszego koszyka misji.
+
+Operacja atomowo zatrzymuje checkout, unieważnia pending approval, ustawia
+koszyk na `intervention_required`, publikuje user-visible event
+`product.not_buyable` i przełącza misję do `waiting_for_support`. Trwały
+`action_request` ma `owner: "support"`, więc dalsza decyzja należy do człowieka.
+Response `200` to aktualny `MissionDetail`; błędny produkt, terminalna misja lub
+stale revision zwracają `409`.
+
 ## Approvals
 
 ### `POST /v1/approvals/{approval_id}/resolve`

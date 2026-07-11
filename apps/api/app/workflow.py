@@ -1906,6 +1906,122 @@ class MissionWorkflow:
             )
             return self._detail(connection, mission_id)
 
+    def report_product_not_buyable(
+        self,
+        mission_id: str,
+        *,
+        product_id: str,
+        reason: str,
+        expected_revision: int | None = None,
+    ) -> dict[str, Any]:
+        """Pause a purchase, notify the user, and assign the decision to support."""
+
+        allowed_reasons = {
+            "out_of_stock",
+            "merchant_rejected",
+            "checkout_unavailable",
+            "policy_restriction",
+            "unknown",
+        }
+        if reason not in allowed_reasons:
+            raise WorkflowConflictError("Unsupported product unavailability reason")
+
+        with self.database.transaction() as connection:
+            mission = self._require_mission(connection, mission_id)
+            self._check_revision(mission, expected_revision)
+            if mission["status"] in {"completed", "failed", "cancelled"}:
+                raise WorkflowConflictError(
+                    "A terminal mission cannot accept a product availability report"
+                )
+
+            product = connection.execute(
+                """
+                SELECT p.id, p.name, b.id AS basket_id
+                FROM baskets AS b
+                JOIN basket_items AS item ON item.basket_id = b.id
+                JOIN products AS p ON p.id = item.product_id
+                WHERE b.id = (
+                    SELECT current.id FROM baskets AS current
+                    WHERE current.mission_id = ?
+                    ORDER BY current.created_at DESC LIMIT 1
+                )
+                  AND p.id = ?
+                LIMIT 1
+                """,
+                (mission_id, product_id),
+            ).fetchone()
+            if product is None:
+                raise WorkflowConflictError(
+                    "The reported product is not in the mission's current purchase plan"
+                )
+
+            action_id = self._create_action_request(
+                connection,
+                mission_id,
+                action_type="product_not_buyable",
+                reason_code="PRODUCT_NOT_BUYABLE",
+                question=(
+                    f"{product['name']} cannot be purchased. Decide whether to find a "
+                    "compliant alternative or cancel the mission."
+                ),
+                options=[
+                    {"id": "find_alternative", "label": "Find a compliant alternative"},
+                    {"id": "cancel", "label": "Cancel mission"},
+                ],
+                context={
+                    "product_id": product_id,
+                    "reason": reason,
+                    "reported_by": "agent",
+                    "hard_constraints_preserved": True,
+                },
+                owner="support",
+            )
+
+            now = utc_now()
+            connection.execute(
+                """
+                UPDATE approval_requests
+                SET status = 'cancelled', selected_option = 'product_not_buyable',
+                    resolved_at = ?
+                WHERE mission_id = ? AND status = 'pending'
+                """,
+                (now, mission_id),
+            )
+            connection.execute(
+                """
+                UPDATE baskets
+                SET status = 'intervention_required', updated_at = ?
+                WHERE id = ?
+                """,
+                (now, product["basket_id"]),
+            )
+            self._set_state(
+                connection,
+                mission_id,
+                "waiting_for_support",
+                mission["current_step"],
+            )
+            self._event(
+                connection,
+                mission_id,
+                "product.not_buyable",
+                "agent",
+                "Product cannot be purchased",
+                (
+                    f"{product['name']} cannot currently be purchased. A human is "
+                    "reviewing what to do next."
+                ),
+                severity="action",
+                payload={
+                    "product_id": product_id,
+                    "reason": reason,
+                    "action_request_id": action_id,
+                    "notify_user": True,
+                    "decision_owner": "support",
+                },
+            )
+            return self._detail(connection, mission_id)
+
     def cancel_mission(
         self,
         mission_id: str,

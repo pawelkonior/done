@@ -60,6 +60,7 @@ from .schemas import (
     MissionCorrectionRequest,
     MissionCancelRequest,
     MissionCreateRequest,
+    ProductNotBuyableRequest,
     RealtimeClientSecretRequest,
     ReplanMissionRequest,
 )
@@ -763,6 +764,22 @@ def create_app(
     ) -> dict[str, object]:
         return workflow.request_human_support(
             mission_id,
+            reason=payload.reason,
+            expected_revision=_required_revision(payload.expected_revision),
+        )
+
+    @application.post(
+        "/v1/missions/{mission_id}/product-not-buyable",
+        tags=["agents", "actions"],
+        summary="Report an unbuyable product and hand the decision to a human",
+    )
+    def report_product_not_buyable(
+        mission_id: str,
+        payload: ProductNotBuyableRequest,
+    ) -> dict[str, object]:
+        return workflow.report_product_not_buyable(
+            mission_id,
+            product_id=payload.product_id,
             reason=payload.reason,
             expected_revision=_required_revision(payload.expected_revision),
         )
