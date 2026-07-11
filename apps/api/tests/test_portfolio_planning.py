@@ -1,0 +1,263 @@
+from __future__ import annotations
+
+from datetime import UTC, date, datetime
+
+from fastapi.testclient import TestClient
+
+from app.domain.portfolio.enums import PortfolioTrigger, PriceSignalKind, TimingMode
+from app.domain.portfolio.model import (
+    CandidateOffer,
+    FailureRiskSignal,
+    LPTBSignal,
+    NeedSpec,
+    PriceSignal,
+)
+from app.domain.portfolio.policies import TimingGate
+
+
+def _create(client: TestClient, transcript: str) -> dict:
+    response = client.post(
+        "/v1/missions/text",
+        json={"transcript": transcript, "locale": "pl-PL", "timezone": "Europe/Warsaw"},
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def test_timing_gate_removes_wait_only_for_an_orange_offer() -> None:
+    offer = CandidateOffer(
+        id="ofs-1",
+        snapshot_id="mkt-1",
+        product_id="product-1",
+        merchant_id="merchant-1",
+        category="snacks",
+        price_cents=599,
+        currency="PLN",
+        stock=12,
+        rating=4.8,
+        merchant_reliability=0.95,
+        delivery_success_rate=0.95,
+        p95_delivery_days=1,
+        nut_free=True,
+    )
+    actions = TimingGate().build_actions(
+        need=NeedSpec("snacks", "snacks", 1),
+        offer=offer,
+        price=PriceSignal(
+            kind=PriceSignalKind.WAIT_PREFERRED,
+            expected_price_cents=549,
+            lower_cents=500,
+            upper_cents=600,
+            confidence=0.7,
+            reason="test",
+        ),
+        risk=FailureRiskSignal(0.1, "test"),
+        lptb=LPTBSignal(date(2026, 7, 11), 1, 1, "test"),
+        today=date(2026, 7, 11),
+    )
+
+    assert len(actions) == 1
+    assert actions[0].timing_mode is TimingMode.ORANGE
+    assert actions[0].action.value == "buy_now"
+
+
+def test_created_mission_contains_a_persisted_portfolio_decision(
+    client: TestClient, transcript: str
+) -> None:
+    created = _create(client, transcript)
+
+    decision = created["portfolio_decision"]
+    assert created["mission"]["status"] == "approval_required"
+    assert decision["status"] == "feasible"
+    assert decision["selected_merchant_id"] == "merchant-b"
+    assert len(decision["actions"]) == 10
+    assert all(action["action"] == "buy_now" for action in decision["actions"])
+    assert all(action["lptb"] for action in decision["actions"])
+    assert all(action["quantity"] > 0 for action in decision["actions"])
+    assert created["approval"]["decision_id"] == decision["id"]
+
+
+def test_replan_creates_new_decision_and_supersedes_approval(
+    client: TestClient, transcript: str
+) -> None:
+    created = _create(client, transcript)
+    mission_id = created["mission"]["id"]
+    revision = created["mission"]["revision"]
+    first_approval_id = created["approval"]["id"]
+    first_decision_id = created["portfolio_decision"]["id"]
+
+    replanned = client.post(
+        f"/v1/missions/{mission_id}/replan",
+        json={"expected_revision": revision},
+    )
+    assert replanned.status_code == 200, replanned.text
+    detail = replanned.json()
+
+    assert detail["mission"]["revision"] == revision + 1
+    assert detail["approval"]["id"] != first_approval_id
+    assert detail["portfolio_decision"]["id"] != first_decision_id
+    assert detail["approval"]["decision_id"] == detail["portfolio_decision"]["id"]
+    assert "approval.superseded" in [event["type"] for event in detail["events"]]
+    assert "portfolio.replanned" in [event["type"] for event in detail["events"]]
+
+    history = client.get(f"/v1/missions/{mission_id}/portfolio-decisions")
+    assert history.status_code == 200
+    assert history.json()["total"] == 2
+
+
+def test_deadline_excludes_offers_whose_p95_delivery_is_too_late(
+    client: TestClient, transcript: str
+) -> None:
+    with client.app.state.database.transaction() as connection:
+        connection.execute(
+            "UPDATE merchants SET delivery_success_rate = 0.80 WHERE id = 'merchant-b'"
+        )
+
+    created = _create(client, transcript)
+
+    assert created["mission"]["status"] == "failed"
+    assert created["portfolio_decision"]["status"] == "infeasible_plan"
+    assert created["basket"] is None
+    assert created["approval"] is None
+    assert "No eligible offers" in " ".join(
+        created["portfolio_decision"]["constraint_report"]
+    )
+
+
+def test_delivery_option_must_use_the_checkout_merchant(
+    client: TestClient, transcript: str
+) -> None:
+    created = _create(client, transcript)
+    mission_id = created["mission"]["id"]
+    replacement = next(option for option in created["delivery_options"] if not option["selected"])
+
+    with client.app.state.database.transaction() as connection:
+        basket = connection.execute(
+            "SELECT merchant_id FROM baskets WHERE mission_id = ?", (mission_id,)
+        ).fetchone()
+        delivery_merchants = connection.execute(
+            "SELECT DISTINCT merchant_id FROM delivery_options WHERE mission_id = ?", (mission_id,)
+        ).fetchall()
+        assert basket is not None
+        assert {row["merchant_id"] for row in delivery_merchants} == {basket["merchant_id"]}
+        connection.execute(
+            "UPDATE delivery_options SET merchant_id = 'merchant-c' WHERE id = ?",
+            (replacement["id"],),
+        )
+
+    response = client.put(
+        f"/v1/missions/{mission_id}/delivery-option",
+        json={
+            "delivery_option_id": replacement["id"],
+            "expected_revision": created["mission"]["revision"],
+        },
+    )
+
+    assert response.status_code == 409
+    assert "not compatible" in response.json()["message"]
+
+
+def test_replan_retry_reuses_the_current_decision(
+    client: TestClient, transcript: str
+) -> None:
+    created = _create(client, transcript)
+    mission_id = created["mission"]["id"]
+
+    first = client.post(f"/v1/missions/{mission_id}/replan", json={})
+    assert first.status_code == 200, first.text
+    first_detail = first.json()
+
+    retry = client.post(f"/v1/missions/{mission_id}/replan", json={})
+    assert retry.status_code == 200, retry.text
+    retry_detail = retry.json()
+
+    assert retry_detail["mission"]["revision"] == first_detail["mission"]["revision"]
+    assert retry_detail["portfolio_decision"]["id"] == first_detail["portfolio_decision"]["id"]
+    assert retry_detail["approval"]["id"] == first_detail["approval"]["id"]
+    history = client.get(f"/v1/missions/{mission_id}/portfolio-decisions")
+    assert history.status_code == 200
+    assert history.json()["total"] == 2
+
+
+def test_planner_replays_a_persisted_idempotency_key(
+    client: TestClient, transcript: str
+) -> None:
+    created = _create(client, transcript)
+    mission_id = created["mission"]["id"]
+    planner = client.app.state.portfolio_planner
+    now = datetime.now(UTC)
+
+    with client.app.state.database.transaction() as connection:
+        first = planner.run(
+            connection,
+            mission_id=mission_id,
+            trigger=PortfolioTrigger.MANUAL_REPLAN,
+            now=now,
+        )
+        replayed = planner.run(
+            connection,
+            mission_id=mission_id,
+            trigger=PortfolioTrigger.MANUAL_REPLAN,
+            now=now,
+        )
+        decision_count = connection.execute(
+            "SELECT COUNT(*) AS count FROM portfolio_decisions WHERE mission_id = ?",
+            (mission_id,),
+        ).fetchone()["count"]
+
+    assert replayed.id == first.id
+    assert replayed.snapshot_id == first.snapshot_id
+    assert [action.need_id for action in replayed.selected_actions] == [
+        action.need_id for action in first.selected_actions
+    ]
+    assert decision_count == 2
+
+
+def test_catalog_change_invalidates_replan_reuse(client: TestClient, transcript: str) -> None:
+    created = _create(client, transcript)
+    mission_id = created["mission"]["id"]
+
+    first = client.post(f"/v1/missions/{mission_id}/replan", json={})
+    assert first.status_code == 200, first.text
+    first_detail = first.json()
+    with client.app.state.database.transaction() as connection:
+        connection.execute(
+            "UPDATE products SET price_cents = price_cents + 100 WHERE id = 'snack-pretzels'"
+        )
+
+    changed = client.post(f"/v1/missions/{mission_id}/replan", json={})
+    assert changed.status_code == 200, changed.text
+    changed_detail = changed.json()
+
+    assert changed_detail["mission"]["revision"] == first_detail["mission"]["revision"] + 1
+    assert changed_detail["portfolio_decision"]["id"] != first_detail["portfolio_decision"]["id"]
+    history = client.get(f"/v1/missions/{mission_id}/portfolio-decisions")
+    assert history.status_code == 200
+    assert history.json()["total"] == 3
+
+
+def test_contract_owns_needs_and_revises_them_with_participant_count(
+    client: TestClient, transcript: str
+) -> None:
+    created = _create(client, transcript)
+    mission_id = created["mission"]["id"]
+    initial_needs = {need["id"]: need["quantity"] for need in created["contract"]["needs"]}
+    assert initial_needs["snacks"] == 3
+    assert initial_needs["drinks_juice"] == 4
+    assert initial_needs["drinks_water"] == 3
+
+    corrected = client.post(
+        f"/v1/missions/{mission_id}/corrections",
+        json={
+            "correction": "Change the party to 20 children",
+            "expected_revision": created["mission"]["revision"],
+        },
+    )
+    assert corrected.status_code == 200, corrected.text
+    detail = corrected.json()
+    revised_needs = {need["id"]: need["quantity"] for need in detail["contract"]["needs"]}
+
+    assert revised_needs["snacks"] == 5
+    assert revised_needs["drinks_juice"] == 8
+    assert revised_needs["drinks_water"] == 6
+    assert detail["approval"]["decision_id"] == detail["portfolio_decision"]["id"]

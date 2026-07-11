@@ -67,6 +67,12 @@ class MissionCorrectionRequest(BaseModel):
         return normalized
 
 
+class ReplanMissionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: int | None = Field(default=None, ge=1)
+
+
 class DeliveryOptionSelectionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

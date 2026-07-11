@@ -25,6 +25,7 @@ from .application.mission_service import (
     MissionServiceSettings,
     SpeechInputUnavailableError,
 )
+from .application.portfolio_planning_service import PortfolioPlanningService
 from .application.ports.ai import SpeechToTextPort
 from .application.ports.realtime import RealtimeSessionPort
 from .application.user_service import UserApplicationService
@@ -51,6 +52,7 @@ from .schemas import (
     MissionCorrectionRequest,
     MissionCreateRequest,
     RealtimeClientSecretRequest,
+    ReplanMissionRequest,
 )
 from .workflow import (
     ApprovalNotFoundError,
@@ -136,7 +138,8 @@ def create_app(
     )
     database = Database(resolved_path)
     database.initialize()
-    workflow = MissionWorkflow(database)
+    portfolio_planner = PortfolioPlanningService()
+    workflow = MissionWorkflow(database, portfolio_planner=portfolio_planner)
     user_service = UserApplicationService(SQLiteUserRepository(database))
     runtime_settings = mission_settings or MissionServiceSettings.from_env()
     transcription_settings = get_transcription_settings()
@@ -172,6 +175,7 @@ def create_app(
     )
     application.state.database = database
     application.state.workflow = workflow
+    application.state.portfolio_planner = portfolio_planner
     application.state.user_service = user_service
     application.state.mission_service = mission_service
     application.state.realtime = resolved_realtime
@@ -439,6 +443,21 @@ def create_app(
     @application.get("/v1/missions/{mission_id}", tags=["missions"])
     def mission_detail(mission_id: str) -> dict[str, object]:
         return workflow.get_detail(mission_id)
+
+    @application.get("/v1/missions/{mission_id}/portfolio-decisions", tags=["missions"])
+    def portfolio_decisions(mission_id: str) -> dict[str, object]:
+        return workflow.get_portfolio_decisions(mission_id)
+
+    @application.post("/v1/missions/{mission_id}/replan", tags=["missions"])
+    def replan_mission(
+        mission_id: str,
+        payload: ReplanMissionRequest,
+        if_match: Annotated[str | None, Header(alias="If-Match")] = None,
+    ) -> dict[str, object]:
+        return workflow.replan_mission(
+            mission_id,
+            expected_revision=_expected_revision(payload.expected_revision, if_match),
+        )
 
     @application.put(
         "/v1/missions/{mission_id}/delivery-option",

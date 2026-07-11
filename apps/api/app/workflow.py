@@ -16,6 +16,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from app.application.portfolio_planning_service import PortfolioPlanningService
 from app.domain.common import Money
 from app.domain.mission.model import Constraint, ConstraintKind, MissionContract
 from app.domain.mission.policies import (
@@ -24,6 +25,8 @@ from app.domain.mission.policies import (
     BasketSnapshot,
     MissionExecutionPolicy,
 )
+from app.domain.portfolio.enums import PortfolioDecisionStatus, PortfolioTrigger
+from app.domain.portfolio.needs import needs_to_payload, party_needs
 
 from .database import Database
 
@@ -32,19 +35,6 @@ DEFAULT_TRANSCRIPT = (
     "Tomorrow I am organizing a birthday party for ten children. "
     "Buy food, drinks and decorations for under 300 PLN, no nuts, "
     "delivered before 16:00."
-)
-
-PLAN_ITEMS: tuple[tuple[str, int], ...] = (
-    ("snack-pretzels", 3),
-    ("drink-apple", 4),
-    ("drink-water", 3),
-    ("cake-vanilla", 1),
-    ("decor-balloons", 1),
-    ("decor-banner", 1),
-    ("table-plates", 1),
-    ("table-cups", 1),
-    ("napkins-color", 1),
-    ("candles-ten", 1),
 )
 
 TOTAL_STEPS = 6
@@ -58,6 +48,7 @@ ACTIVE_STATUSES = {
     "approval_required",
     "executing",
     "recovering",
+    "waiting",
 }
 
 
@@ -108,8 +99,11 @@ def normalize_failure_type(failure_type: str) -> str:
 
 
 class MissionWorkflow:
-    def __init__(self, database: Database):
+    def __init__(
+        self, database: Database, *, portfolio_planner: PortfolioPlanningService | None = None
+    ):
         self.database = database
+        self.portfolio_planner = portfolio_planner or PortfolioPlanningService()
 
     # ------------------------------------------------------------------
     # Public commands
@@ -145,6 +139,7 @@ class MissionWorkflow:
         approval_id = new_id("apr")
         selected_delivery_id = new_id("del")
         now = utc_now()
+        contract_needs = needs_to_payload(party_needs(interpreted["participants"]))
 
         with self.database.transaction() as connection:
             connection.execute(
@@ -208,18 +203,19 @@ class MissionWorkflow:
             connection.execute(
                 """
                 INSERT INTO mission_contracts
-                    (id, mission_id, goal, participants_json,
+                    (id, mission_id, goal, participants_json, needs_json,
                      hard_constraints_json, soft_preferences_json,
                      budget_limit_cents, currency, deadline, approval_policy,
                      allowed_categories_json, forbidden_categories_json,
                      confidence, version, created_at)
-                VALUES (?, ?, 'prepare_birthday_party', ?, ?, ?, ?, 'PLN', ?,
+                VALUES (?, ?, 'prepare_birthday_party', ?, ?, ?, ?, ?, 'PLN', ?,
                         ?, ?, ?, ?, 1, ?)
                 """,
                 (
                     contract_id,
                     mission_id,
                     dump_json([{"type": "children", "count": interpreted["participants"]}]),
+                    dump_json(contract_needs),
                     dump_json(interpreted["hard_constraints"]),
                     dump_json(
                         [
@@ -278,7 +274,7 @@ class MissionWorkflow:
                 "agent",
                 "Shopping plan created",
                 "Done planned snacks, drinks, cake, decorations and tableware.",
-                payload={"categories": 7, "estimated_items": len(PLAN_ITEMS)},
+                payload={"contract_version": 1},
             )
             self._set_state(connection, mission_id, "searching", 3)
             self._event(
@@ -296,12 +292,82 @@ class MissionWorkflow:
                 },
             )
 
+            decision = self.portfolio_planner.run(
+                connection,
+                mission_id=mission_id,
+                trigger=PortfolioTrigger.MISSION_CREATED,
+                preferred_merchants=policy.preferred_merchant_ids,
+            )
+            self._event(
+                connection,
+                mission_id,
+                "market.snapshot_captured",
+                "tool",
+                "Market snapshot captured",
+                "The portfolio run uses one immutable catalog and price snapshot.",
+                payload={"snapshot_id": decision.snapshot_id, "decision_id": decision.id},
+            )
+            orange_actions = [
+                action
+                for action in decision.selected_actions
+                if action.timing_mode.value == "orange"
+            ]
+            if orange_actions:
+                self._event(
+                    connection,
+                    mission_id,
+                    "timing.orange_mode",
+                    "policy",
+                    "Waiting disabled for time-sensitive offers",
+                    "One or more offers reached their latest safe point to buy.",
+                    severity="warning",
+                    payload={"need_ids": [action.need_id for action in orange_actions]},
+                )
+            if decision.status is PortfolioDecisionStatus.INFEASIBLE_PLAN:
+                self._event(
+                    connection,
+                    mission_id,
+                    "portfolio.infeasible",
+                    "solver",
+                    "No feasible portfolio",
+                    "No complete plan satisfies the current hard constraints.",
+                    severity="error",
+                    payload={"decision_id": decision.id, "reasons": list(decision.constraint_report)},
+                )
+                self._set_state(connection, mission_id, "failed", 4)
+                return self._detail(connection, mission_id)
+            if decision.status is PortfolioDecisionStatus.INTERNAL_VALIDATION_ERROR:
+                self._event(
+                    connection,
+                    mission_id,
+                    "portfolio.invalid",
+                    "policy",
+                    "Portfolio validation failed",
+                    "The solver result did not pass independent validation.",
+                    severity="error",
+                    payload={"decision_id": decision.id, "reasons": list(decision.constraint_report)},
+                )
+                self._set_state(connection, mission_id, "failed", 4)
+                return self._detail(connection, mission_id)
+            if decision.status is PortfolioDecisionStatus.WAITING:
+                self._event(
+                    connection,
+                    mission_id,
+                    "portfolio.waiting",
+                    "solver",
+                    "Waiting for a safer price point",
+                    "The selected offers can safely wait until their latest point to buy.",
+                    payload={"decision_id": decision.id, "reasons": list(decision.explanations)},
+                )
+                self._set_state(connection, mission_id, "waiting", 4)
+                return self._detail(connection, mission_id)
+
             delivery_at = self._delivery_time(interpreted["deadline"], hours_before=2)
             delivery_options = (
                 (
                     selected_delivery_id,
                     mission_id,
-                    "merchant-b",
+                    decision.selected_merchant_id,
                     "Priority delivery",
                     delivery_at,
                     1299,
@@ -312,7 +378,7 @@ class MissionWorkflow:
                 (
                     new_id("del"),
                     mission_id,
-                    "merchant-b",
+                    decision.selected_merchant_id,
                     "Latest safe slot",
                     self._delivery_time(interpreted["deadline"], hours_before=1),
                     899,
@@ -323,7 +389,7 @@ class MissionWorkflow:
                 (
                     new_id("del"),
                     mission_id,
-                    "merchant-c",
+                    decision.selected_merchant_id,
                     "Express backup",
                     self._delivery_time(interpreted["deadline"], hours_before=3),
                     1999,
@@ -348,12 +414,14 @@ class MissionWorkflow:
                     (id, mission_id, merchant_id, delivery_option_id,
                      subtotal_cents, delivery_cost_cents, total_cents,
                      currency, status, created_at, updated_at)
-                VALUES (?, ?, 'merchant-b', ?, 0, 1299, 1299, 'PLN',
+                VALUES (?, ?, ?, ?, 0, 1299, 1299, 'PLN',
                         'proposed', ?, ?)
                 """,
-                (basket_id, mission_id, selected_delivery_id, now, now),
+                (basket_id, mission_id, decision.selected_merchant_id, selected_delivery_id, now, now),
             )
-            for product_id, quantity in PLAN_ITEMS:
+            for action in decision.selected_actions:
+                product_id = action.offer.product_id
+                quantity = action.quantity
                 product = connection.execute(
                     "SELECT price_cents FROM products WHERE id = ?", (product_id,)
                 ).fetchone()
@@ -371,7 +439,7 @@ class MissionWorkflow:
                         basket_id,
                         product_id,
                         quantity,
-                        product["price_cents"],
+                        action.offer.price_cents,
                         now,
                     ),
                 )
@@ -383,9 +451,10 @@ class MissionWorkflow:
                 "basket.optimized",
                 "agent",
                 "Basket optimized",
-                f"Selected {len(PLAN_ITEMS)} products for {money(total):.2f} PLN.",
+                f"Selected {len(decision.selected_actions)} products for {money(total):.2f} PLN.",
                 payload={
                     "basket_id": basket_id,
+                    "decision_id": decision.id,
                     "subtotal": money(subtotal),
                     "delivery_cost": 12.99,
                     "total": money(total),
@@ -446,13 +515,14 @@ class MissionWorkflow:
                 connection.execute(
                     """
                     INSERT INTO approval_requests
-                        (id, mission_id, approval_type, question, options_json,
+                        (id, mission_id, decision_id, approval_type, question, options_json,
                          status, expires_at, created_at)
-                    VALUES (?, ?, 'purchase_approval', ?, ?, 'pending', ?, ?)
+                    VALUES (?, ?, ?, 'purchase_approval', ?, ?, 'pending', ?, ?)
                     """,
                     (
                         approval_id,
                         mission_id,
+                        decision.id,
                         f"Approve purchase for {money(total):.2f} PLN?",
                         dump_json(
                             [
@@ -700,6 +770,10 @@ class MissionWorkflow:
             ).fetchone()
             if basket is None:
                 raise WorkflowConflictError("Mission has no basket")
+            if option["merchant_id"] != basket["merchant_id"]:
+                raise WorkflowConflictError(
+                    "Delivery option is not compatible with the selected checkout merchant"
+                )
             if basket["delivery_option_id"] == delivery_option_id:
                 return self._detail(connection, mission_id)
 
@@ -813,13 +887,16 @@ class MissionWorkflow:
                 )
 
             participants = load_json(contract["participants_json"], [])
+            needs_json = contract["needs_json"]
             participant_match = re.search(
                 r"([0-9]+)\s*(?:children|kids|dzieci)", correction, re.IGNORECASE
             )
             if participant_match:
+                participant_count = max(1, int(participant_match.group(1)))
                 participants = [
-                    {"type": "children", "count": int(participant_match.group(1))}
+                    {"type": "children", "count": participant_count}
                 ]
+                needs_json = dump_json(needs_to_payload(party_needs(participant_count)))
 
             hard_constraints = load_json(contract["hard_constraints_json"], [])
             for constraint in hard_constraints:
@@ -847,33 +924,25 @@ class MissionWorkflow:
                     {"type": "allergen", "operator": "exclude", "value": "nuts"}
                 )
 
-            basket = connection.execute(
-                "SELECT * FROM baskets WHERE mission_id = ? ORDER BY created_at DESC LIMIT 1",
-                (mission_id,),
-            ).fetchone()
-            if basket and basket["total_cents"] > budget_cents:
-                raise WorkflowConflictError(
-                    "The corrected budget is below the current basket total; re-planning is required"
-                )
-
             version = contract["version"] + 1
             contract_id = new_id("ctr")
             now = utc_now()
             connection.execute(
                 """
                 INSERT INTO mission_contracts
-                    (id, mission_id, goal, participants_json,
+                    (id, mission_id, goal, participants_json, needs_json,
                      hard_constraints_json, soft_preferences_json,
                      budget_limit_cents, currency, deadline, approval_policy,
                      allowed_categories_json, forbidden_categories_json,
                      confidence, version, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     contract_id,
                     mission_id,
                     contract["goal"],
                     dump_json(participants),
+                    needs_json,
                     dump_json(hard_constraints),
                     contract["soft_preferences_json"],
                     budget_cents,
@@ -891,8 +960,8 @@ class MissionWorkflow:
                 """
                 UPDATE missions
                 SET raw_voice_transcript = raw_voice_transcript || '\nCorrection: ' || ?,
-                    budget_limit_cents = ?, deadline = ?, status = 'approval_required',
-                    current_step = 5, revision = revision + 1, updated_at = ?
+                    budget_limit_cents = ?, deadline = ?, status = 'planning',
+                    current_step = 3, revision = revision + 1, updated_at = ?
                 WHERE id = ?
                 """,
                 (correction, budget_cents, deadline.isoformat(), now, mission_id),
@@ -915,15 +984,48 @@ class MissionWorkflow:
                 f"Contract version {version} preserves the updated hard constraints.",
                 payload={"contract_id": contract_id, "version": version},
             )
-            if basket:
-                self._validate_basket(connection, mission_id, basket["id"], budget_cents)
-                self._replace_pending_approval(
-                    connection,
-                    mission_id,
-                    basket["total_cents"],
-                    reason="The mission contract changed, so the plan requires fresh approval.",
-                )
-            return self._detail(connection, mission_id)
+            return self._replan_in_transaction(
+                connection,
+                mission_id=mission_id,
+                trigger=PortfolioTrigger.CONTRACT_REVISED,
+                increment_revision=False,
+            )
+
+    def replan_mission(
+        self,
+        mission_id: str,
+        *,
+        expected_revision: int | None = None,
+        trigger: PortfolioTrigger = PortfolioTrigger.MANUAL_REPLAN,
+    ) -> dict[str, Any]:
+        """Rebuild an auditable decision and replace any pending checkout safely."""
+
+        with self.database.transaction() as connection:
+            mission = self._require_mission(connection, mission_id)
+            self._check_revision(mission, expected_revision)
+            if mission["status"] in {"executing", "recovering", "completed", "failed", "cancelled"}:
+                raise WorkflowConflictError("Mission can no longer be re-planned")
+            if self.portfolio_planner.repository.reusable_decision_id(
+                connection,
+                mission_id=mission_id,
+                trigger=trigger,
+                now=datetime.now(UTC),
+            ):
+                return self._detail(connection, mission_id)
+            return self._replan_in_transaction(
+                connection,
+                mission_id=mission_id,
+                trigger=trigger,
+                increment_revision=True,
+            )
+
+    def get_portfolio_decisions(self, mission_id: str) -> dict[str, Any]:
+        with self.database.reader() as connection:
+            self._require_mission(connection, mission_id)
+            items = self.portfolio_planner.repository.decision_history_projection(
+                connection, mission_id
+            )
+            return {"items": items, "decisions": items, "total": len(items)}
 
     # ------------------------------------------------------------------
     # Public queries
@@ -1014,6 +1116,299 @@ class MissionWorkflow:
     # ------------------------------------------------------------------
     # Workflow internals
     # ------------------------------------------------------------------
+    def _replan_in_transaction(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        mission_id: str,
+        trigger: PortfolioTrigger,
+        increment_revision: bool,
+    ) -> dict[str, Any]:
+        contract = connection.execute(
+            """
+            SELECT * FROM mission_contracts
+            WHERE mission_id = ? ORDER BY version DESC LIMIT 1
+            """,
+            (mission_id,),
+        ).fetchone()
+        if contract is None:
+            raise WorkflowConflictError("Mission has no contract")
+        policy = self._execution_policy_from_contract(contract)
+        decision = self.portfolio_planner.run(
+            connection,
+            mission_id=mission_id,
+            trigger=trigger,
+            preferred_merchants=policy.preferred_merchant_ids,
+        )
+        self._event(
+            connection,
+            mission_id,
+            "market.snapshot_captured",
+            "tool",
+            "Market snapshot captured",
+            "The replan uses one immutable catalog and price snapshot.",
+            payload={"snapshot_id": decision.snapshot_id, "decision_id": decision.id},
+        )
+        if decision.status in {
+            PortfolioDecisionStatus.INFEASIBLE_PLAN,
+            PortfolioDecisionStatus.INTERNAL_VALIDATION_ERROR,
+        }:
+            self._clear_pending_checkout(connection, mission_id, cancel_approval=True)
+            self._event(
+                connection,
+                mission_id,
+                "portfolio.infeasible",
+                "solver",
+                "No feasible portfolio",
+                "No complete plan satisfies the current hard constraints.",
+                severity="error",
+                payload={"decision_id": decision.id, "reasons": list(decision.constraint_report)},
+            )
+            self._set_replan_state(
+                connection,
+                mission_id,
+                status="failed",
+                current_step=4,
+                requires_approval=False,
+                increment_revision=increment_revision,
+            )
+            return self._detail(connection, mission_id)
+
+        if decision.status is PortfolioDecisionStatus.WAITING:
+            self._clear_pending_checkout(connection, mission_id, cancel_approval=True)
+            self._event(
+                connection,
+                mission_id,
+                "portfolio.waiting",
+                "solver",
+                "Waiting for a safer price point",
+                "The selected offers can safely wait until their latest point to buy.",
+                payload={"decision_id": decision.id, "reasons": list(decision.explanations)},
+            )
+            self._set_replan_state(
+                connection,
+                mission_id,
+                status="waiting",
+                current_step=4,
+                requires_approval=False,
+                increment_revision=increment_revision,
+            )
+            return self._detail(connection, mission_id)
+
+        self._clear_pending_checkout(connection, mission_id, cancel_approval=False)
+        basket_id, total = self._materialize_portfolio_basket(
+            connection, mission_id=mission_id, contract=contract, decision=decision
+        )
+        self._validate_basket(
+            connection, mission_id, basket_id, contract["budget_limit_cents"]
+        )
+        approval_required = policy.requires_approval(Money(total, "PLN"), risk_level=42)
+        if approval_required:
+            approval_id = self._replace_pending_approval(
+                connection,
+                mission_id,
+                total,
+                reason="A new portfolio decision replaced the pending checkout.",
+                decision_id=decision.id,
+            )
+        else:
+            approval_id = None
+        self._event(
+            connection,
+            mission_id,
+            "portfolio.replanned",
+            "solver",
+            "Portfolio decision refreshed",
+            "A validated portfolio was projected into the current basket.",
+            payload={
+                "decision_id": decision.id,
+                "basket_id": basket_id,
+                "approval_id": approval_id,
+                "total": money(total),
+            },
+        )
+        self._set_replan_state(
+            connection,
+            mission_id,
+            status="approval_required" if approval_required else "executing",
+            current_step=5,
+            requires_approval=approval_required,
+            increment_revision=increment_revision,
+        )
+        if not approval_required:
+            self._execute_approved_mission(connection, mission_id)
+        return self._detail(connection, mission_id)
+
+    def _materialize_portfolio_basket(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        mission_id: str,
+        contract: sqlite3.Row,
+        decision: Any,
+    ) -> tuple[str, int]:
+        merchant_id = decision.selected_merchant_id
+        if merchant_id is None:
+            raise WorkflowConflictError("Feasible portfolio has no selected merchant")
+        now = utc_now()
+        delivery_id = new_id("del")
+        delivery_options = (
+            (
+                delivery_id,
+                mission_id,
+                merchant_id,
+                "Priority delivery",
+                self._delivery_time(contract["deadline"], hours_before=2),
+                1299,
+                0.96,
+                1,
+                1,
+            ),
+            (
+                new_id("del"),
+                mission_id,
+                merchant_id,
+                "Latest safe slot",
+                self._delivery_time(contract["deadline"], hours_before=1),
+                899,
+                0.86,
+                0,
+                1,
+            ),
+            (
+                new_id("del"),
+                mission_id,
+                merchant_id,
+                "Express backup",
+                self._delivery_time(contract["deadline"], hours_before=3),
+                1999,
+                0.99,
+                0,
+                1,
+            ),
+        )
+        connection.executemany(
+            """
+            INSERT INTO delivery_options
+                (id, mission_id, merchant_id, label, delivery_at, cost_cents,
+                 confidence, selected, available)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            delivery_options,
+        )
+        basket_id = new_id("bsk")
+        connection.execute(
+            """
+            INSERT INTO baskets
+                (id, mission_id, merchant_id, delivery_option_id, subtotal_cents,
+                 delivery_cost_cents, total_cents, currency, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 0, 1299, 1299, 'PLN', 'proposed', ?, ?)
+            """,
+            (basket_id, mission_id, merchant_id, delivery_id, now, now),
+        )
+        for action in decision.selected_actions:
+            if action.action.value != "buy_now":
+                raise WorkflowConflictError("Waiting actions cannot be projected into a checkout")
+            connection.execute(
+                """
+                INSERT INTO basket_items
+                    (id, basket_id, product_id, quantity, unit_price_cents,
+                     substitution_allowed, created_at)
+                VALUES (?, ?, ?, ?, ?, 1, ?)
+                """,
+                (
+                    new_id("itm"),
+                    basket_id,
+                    action.offer.product_id,
+                    action.quantity,
+                    action.offer.price_cents,
+                    now,
+                ),
+            )
+        _, total = self._recalculate_basket(connection, basket_id)
+        return basket_id, total
+
+    def _clear_pending_checkout(
+        self, connection: sqlite3.Connection, mission_id: str, *, cancel_approval: bool
+    ) -> None:
+        if cancel_approval:
+            pending = connection.execute(
+                """
+                SELECT id FROM approval_requests
+                WHERE mission_id = ? AND status = 'pending'
+                ORDER BY created_at DESC LIMIT 1
+                """,
+                (mission_id,),
+            ).fetchone()
+            if pending is not None:
+                connection.execute(
+                    """
+                    UPDATE approval_requests
+                    SET status = 'cancelled', selected_option = 'superseded', resolved_at = ?
+                    WHERE id = ?
+                    """,
+                    (utc_now(), pending["id"]),
+                )
+                self._event(
+                    connection,
+                    mission_id,
+                    "approval.superseded",
+                    "system",
+                    "Previous approval invalidated",
+                    "The portfolio decision changed before checkout.",
+                    payload={"approval_id": pending["id"]},
+                )
+        connection.execute("DELETE FROM baskets WHERE mission_id = ?", (mission_id,))
+        connection.execute("DELETE FROM delivery_options WHERE mission_id = ?", (mission_id,))
+
+    @staticmethod
+    def _execution_policy_from_contract(contract: sqlite3.Row) -> MissionExecutionPolicy:
+        preferences = load_json(contract["soft_preferences_json"], [])
+        preferred: tuple[str, ...] = ()
+        safe_recovery = True
+        for preference in preferences:
+            if not isinstance(preference, dict):
+                continue
+            if preference.get("type") == "preferred_merchants":
+                preferred = tuple(str(value) for value in preference.get("merchant_ids", []))
+            elif preference.get("type") == "safe_recovery":
+                safe_recovery = bool(preference.get("enabled", True))
+        approval_mode = contract["approval_policy"]
+        if approval_mode not in {"always", "autonomous_low_risk"}:
+            approval_mode = "always"
+        return MissionExecutionPolicy(
+            approval_mode=approval_mode,
+            safe_recovery_enabled=safe_recovery,
+            preferred_merchant_ids=preferred,
+        )
+
+    @staticmethod
+    def _set_replan_state(
+        connection: sqlite3.Connection,
+        mission_id: str,
+        *,
+        status: str,
+        current_step: int,
+        requires_approval: bool,
+        increment_revision: bool,
+    ) -> None:
+        connection.execute(
+            """
+            UPDATE missions
+            SET status = ?, current_step = ?, requires_approval = ?,
+                revision = revision + ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                status,
+                current_step,
+                int(requires_approval),
+                int(increment_revision),
+                utc_now(),
+                mission_id,
+            ),
+        )
+
     def _execute_approved_mission(
         self, connection: sqlite3.Connection, mission_id: str
     ) -> None:
@@ -1696,6 +2091,7 @@ class MissionWorkflow:
         total_cents: int,
         *,
         reason: str,
+        decision_id: str | None = None,
     ) -> str:
         pending = connection.execute(
             """
@@ -1724,18 +2120,28 @@ class MissionWorkflow:
                 reason,
                 payload={"approval_id": pending["id"]},
             )
+        if decision_id is None:
+            decision = connection.execute(
+                """
+                SELECT id FROM portfolio_decisions
+                WHERE mission_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1
+                """,
+                (mission_id,),
+            ).fetchone()
+            decision_id = decision["id"] if decision is not None else None
         approval_id = new_id("apr")
         expires_at = (datetime.now(UTC) + timedelta(hours=2)).isoformat(timespec="seconds")
         connection.execute(
             """
             INSERT INTO approval_requests
-                (id, mission_id, approval_type, question, options_json,
+                (id, mission_id, decision_id, approval_type, question, options_json,
                  status, expires_at, created_at)
-            VALUES (?, ?, 'purchase_approval', ?, ?, 'pending', ?, ?)
+            VALUES (?, ?, ?, 'purchase_approval', ?, ?, 'pending', ?, ?)
             """,
             (
                 approval_id,
                 mission_id,
+                decision_id,
                 f"Approve purchase for {money(total_cents):.2f} PLN?",
                 dump_json(
                     [
@@ -1903,6 +2309,9 @@ class MissionWorkflow:
             "payment_attempts": [self._payment_projection(row) for row in payments],
             "order": self._order_projection(order) if order else None,
             "summary": load_json(mission["summary_json"], None),
+            "portfolio_decision": self.portfolio_planner.repository.latest_decision_projection(
+                connection, mission_id
+            ),
         }
 
     def _mission_summary(
@@ -2056,6 +2465,7 @@ class MissionWorkflow:
             "mission_id": contract["mission_id"],
             "goal": contract["goal"],
             "participants": load_json(contract["participants_json"], []),
+            "needs": load_json(contract["needs_json"], []),
             "hard_constraints": load_json(contract["hard_constraints_json"], []),
             "soft_preferences": load_json(contract["soft_preferences_json"], []),
             "budget": {
@@ -2077,6 +2487,7 @@ class MissionWorkflow:
         return {
             "id": approval["id"],
             "mission_id": approval["mission_id"],
+            "decision_id": approval["decision_id"],
             "type": approval["approval_type"],
             "approval_type": approval["approval_type"],
             "question": approval["question"],

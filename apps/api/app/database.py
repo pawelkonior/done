@@ -6,6 +6,7 @@ import json
 import sqlite3
 import threading
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Iterator
 
@@ -227,6 +228,150 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_user_profiles_email ON user_profiles(email
 """
 
 
+MIGRATIONS: tuple[tuple[int, str], ...] = (
+    (
+        1,
+        """
+        CREATE TABLE IF NOT EXISTS market_snapshots (
+            id TEXT PRIMARY KEY,
+            mission_id TEXT NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
+            captured_at TEXT NOT NULL,
+            freshness_deadline TEXT NOT NULL,
+            catalog_hash TEXT NOT NULL,
+            source TEXT NOT NULL,
+            status TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS offer_snapshots (
+            id TEXT PRIMARY KEY,
+            snapshot_id TEXT NOT NULL REFERENCES market_snapshots(id) ON DELETE CASCADE,
+            product_id TEXT NOT NULL REFERENCES products(id),
+            merchant_id TEXT NOT NULL REFERENCES merchants(id),
+            category TEXT NOT NULL,
+            price_cents INTEGER NOT NULL CHECK(price_cents >= 0),
+            currency TEXT NOT NULL,
+            stock INTEGER NOT NULL CHECK(stock >= 0),
+            rating REAL NOT NULL,
+            merchant_reliability REAL NOT NULL,
+            delivery_success_rate REAL NOT NULL,
+            p95_delivery_days INTEGER NOT NULL CHECK(p95_delivery_days >= 0),
+            tags_json TEXT NOT NULL,
+            nut_free INTEGER NOT NULL,
+            available INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS price_observations (
+            id TEXT PRIMARY KEY,
+            product_id TEXT NOT NULL REFERENCES products(id),
+            offer_snapshot_id TEXT NOT NULL REFERENCES offer_snapshots(id) ON DELETE CASCADE,
+            observed_at TEXT NOT NULL,
+            price_cents INTEGER NOT NULL CHECK(price_cents >= 0),
+            currency TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS inventory_observations (
+            id TEXT PRIMARY KEY,
+            product_id TEXT NOT NULL REFERENCES products(id),
+            offer_snapshot_id TEXT NOT NULL REFERENCES offer_snapshots(id) ON DELETE CASCADE,
+            observed_at TEXT NOT NULL,
+            stock INTEGER NOT NULL CHECK(stock >= 0),
+            available INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS plan_states (
+            id TEXT PRIMARY KEY,
+            mission_id TEXT NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
+            contract_version INTEGER NOT NULL,
+            needs_json TEXT NOT NULL,
+            budget_limit_cents INTEGER NOT NULL CHECK(budget_limit_cents >= 0),
+            currency TEXT NOT NULL,
+            deadline TEXT NOT NULL,
+            hard_constraints_json TEXT NOT NULL,
+            soft_preferences_json TEXT NOT NULL,
+            approval_policy TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(mission_id, contract_version)
+        );
+
+        CREATE TABLE IF NOT EXISTS portfolio_decisions (
+            id TEXT PRIMARY KEY,
+            mission_id TEXT NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
+            plan_state_id TEXT NOT NULL REFERENCES plan_states(id),
+            snapshot_id TEXT NOT NULL REFERENCES market_snapshots(id),
+            trigger TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL UNIQUE,
+            status TEXT NOT NULL,
+            selected_merchant_id TEXT REFERENCES merchants(id),
+            total_cents INTEGER NOT NULL CHECK(total_cents >= 0),
+            currency TEXT NOT NULL,
+            constraint_report_json TEXT NOT NULL,
+            explanations_json TEXT NOT NULL,
+            solver_metadata_json TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS portfolio_actions (
+            id TEXT PRIMARY KEY,
+            decision_id TEXT NOT NULL REFERENCES portfolio_decisions(id) ON DELETE CASCADE,
+            need_id TEXT NOT NULL,
+            offer_snapshot_id TEXT NOT NULL REFERENCES offer_snapshots(id),
+            product_id TEXT NOT NULL REFERENCES products(id),
+            merchant_id TEXT NOT NULL REFERENCES merchants(id),
+            action TEXT NOT NULL,
+            selected INTEGER NOT NULL,
+            timing_mode TEXT NOT NULL,
+            price_signal TEXT NOT NULL,
+            risk_score REAL NOT NULL,
+            lptb TEXT,
+            objective_cost_cents INTEGER NOT NULL CHECK(objective_cost_cents >= 0),
+            explanation_json TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS optimizer_runs (
+            id TEXT PRIMARY KEY,
+            decision_id TEXT NOT NULL REFERENCES portfolio_decisions(id) ON DELETE CASCADE,
+            solver_name TEXT NOT NULL,
+            status TEXT NOT NULL,
+            wall_time_ms INTEGER NOT NULL CHECK(wall_time_ms >= 0),
+            config_json TEXT NOT NULL,
+            diagnostics_json TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_market_snapshots_mission_captured
+            ON market_snapshots(mission_id, captured_at);
+        CREATE INDEX IF NOT EXISTS idx_price_observations_product_observed
+            ON price_observations(product_id, observed_at);
+        CREATE INDEX IF NOT EXISTS idx_portfolio_decisions_mission_created
+            ON portfolio_decisions(mission_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_portfolio_actions_decision_selected
+            ON portfolio_actions(decision_id, selected);
+        """,
+    ),
+    (
+        2,
+        """
+        ALTER TABLE portfolio_actions
+        ADD COLUMN quantity INTEGER NOT NULL DEFAULT 1 CHECK(quantity > 0);
+        """,
+    ),
+    (
+        3,
+        """
+        ALTER TABLE mission_contracts
+        ADD COLUMN needs_json TEXT NOT NULL DEFAULT '[]';
+        """,
+    ),
+    (
+        4,
+        """
+        ALTER TABLE approval_requests
+        ADD COLUMN decision_id TEXT REFERENCES portfolio_decisions(id);
+        CREATE INDEX IF NOT EXISTS idx_approvals_decision ON approval_requests(decision_id);
+        """,
+    ),
+)
+
+
 MERCHANTS = [
     ("merchant-a", "Budget Market", 0.82, 0.86, 0.80, 1),
     ("merchant-b", "Party Market", 0.94, 0.96, 0.95, 1),
@@ -275,6 +420,7 @@ class Database:
             if self.path != ":memory:":
                 connection.execute("PRAGMA journal_mode = WAL")
             connection.executescript(SCHEMA)
+            self._apply_migrations(connection)
             self._seed_reference_data(connection)
             connection.commit()
 
@@ -305,10 +451,18 @@ class Database:
 
         with self.transaction() as connection:
             for table in (
+                "optimizer_runs",
+                "portfolio_actions",
+                "approval_requests",
+                "portfolio_decisions",
+                "plan_states",
+                "inventory_observations",
+                "price_observations",
+                "offer_snapshots",
+                "market_snapshots",
                 "orders",
                 "failure_injections",
                 "payment_attempts",
-                "approval_requests",
                 "basket_items",
                 "baskets",
                 "delivery_options",
@@ -324,6 +478,51 @@ class Database:
                 connection.execute(f"DELETE FROM {table}")
             connection.execute("DELETE FROM sqlite_sequence WHERE name = 'mission_events'")
             self._seed_reference_data(connection)
+
+    @staticmethod
+    def _apply_migrations(connection: sqlite3.Connection) -> None:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                version INTEGER PRIMARY KEY,
+                applied_at TEXT NOT NULL
+            )
+            """
+        )
+        applied = {
+            row["version"]
+            for row in connection.execute("SELECT version FROM schema_migrations").fetchall()
+        }
+        for version, statement in MIGRATIONS:
+            if version in applied:
+                continue
+            compatibility_columns = {
+                2: ("portfolio_actions", "quantity"),
+                3: ("mission_contracts", "needs_json"),
+                4: ("approval_requests", "decision_id"),
+            }
+            if version in compatibility_columns:
+                table, column = compatibility_columns[version]
+                columns = {
+                    row["name"]
+                    for row in connection.execute(f"PRAGMA table_info({table})").fetchall()
+                }
+                if column in columns:
+                    if version == 4:
+                        connection.execute(
+                            "CREATE INDEX IF NOT EXISTS idx_approvals_decision "
+                            "ON approval_requests(decision_id)"
+                        )
+                    connection.execute(
+                        "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
+                        (version, datetime.now(UTC).isoformat(timespec="milliseconds")),
+                    )
+                    continue
+            connection.executescript(statement)
+            connection.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
+                (version, datetime.now(UTC).isoformat(timespec="milliseconds")),
+            )
 
     @staticmethod
     def _seed_reference_data(connection: sqlite3.Connection) -> None:

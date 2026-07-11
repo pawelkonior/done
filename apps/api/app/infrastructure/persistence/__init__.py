@@ -1,1 +1,1 @@
-"""Persistence adapters implementing application ports."""
+"""Persistence adapters."""

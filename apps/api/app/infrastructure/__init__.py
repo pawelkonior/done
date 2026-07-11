@@ -1,1 +1,1 @@
-"""Infrastructure adapters for external services."""
+"""Adapters for persistence and deterministic portfolio planning."""

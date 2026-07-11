@@ -86,6 +86,7 @@ def test_delivery_selection_changes_total_selection_and_approval(
     assert [option["id"] for option in selected] == [replacement["id"]]
     assert updated["approval"]["id"] != old_approval_id
     assert updated["approval"]["status"] == "pending"
+    assert updated["approval"]["decision_id"] == created["portfolio_decision"]["id"]
     assert "approval.superseded" in [event["type"] for event in updated["events"]]
 
     stale = client.put(
