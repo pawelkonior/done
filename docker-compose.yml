@@ -1,0 +1,58 @@
+services:
+  stt:
+    build:
+      context: ./apps/stt
+    environment:
+      STT_MODEL: turbo
+      STT_MODEL_DIR: /models
+      STT_DEVICE: cpu
+      STT_ALLOW_MODEL_DOWNLOAD: "false"
+    ports:
+      - "127.0.0.1:8002:8002"
+    volumes:
+      - "${HOME}/.cache/whisper:/models:ro"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./apps/api
+    environment:
+      DONE_DB_PATH: /data/done.sqlite3
+      DONE_AI_ENABLED: "true"
+      DONE_STT_ENABLED: "true"
+      DONE_DEMO_FAILURES_ENABLED: "${DONE_DEMO_FAILURES_ENABLED:-true}"
+      DONE_DEMO_ENDPOINTS_ENABLED: "${DONE_DEMO_ENDPOINTS_ENABLED:-true}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      DONE_REALTIME_ENABLED: "${DONE_REALTIME_ENABLED:-false}"
+      DONE_REALTIME_BASE_URL: "${DONE_REALTIME_BASE_URL:-https://api.openai.com}"
+      DONE_REALTIME_MODEL: "${DONE_REALTIME_MODEL:-gpt-realtime-1.5}"
+      DONE_REALTIME_VOICE: "${DONE_REALTIME_VOICE:-marin}"
+      DONE_REALTIME_TRANSCRIPTION_MODEL: "${DONE_REALTIME_TRANSCRIPTION_MODEL:-gpt-realtime-whisper}"
+      DONE_OLLAMA_BASE_URL: http://host.docker.internal:11434
+      DONE_OLLAMA_MODEL: "${DONE_OLLAMA_MODEL:-qwen2.5:7b}"
+      DONE_WHISPER_BASE_URL: http://stt:8002
+      DONE_CORS_ORIGINS: "${DONE_CORS_ORIGINS:-http://localhost:8081,http://127.0.0.1:8081}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:8001:8000"
+    volumes:
+      - done_data:/data
+    depends_on:
+      stt:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 2s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  done_data:
