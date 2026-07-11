@@ -1,8 +1,10 @@
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 import { getRealtimeClientSecret, resolveActionRequest } from "@/api/client";
 import { LiveVoiceSheet } from "@/components/LiveVoiceSheet";
+import { executeCatalogRealtimeCommand } from "@/realtime/catalog-commands";
+import type { CatalogCommandOutput } from "@/realtime/catalog-commands";
 import { executeMissionRealtimeCommand } from "@/realtime/mission-commands";
-import type { MissionDetail } from "@/types/domain";
+import type { CatalogOffer, MissionDetail } from "@/types/domain";
 
 const mockConnect = jest.fn(async () => undefined);
 const mockSend = jest.fn();
@@ -23,6 +25,12 @@ jest.mock("@/realtime/mission-commands", () => {
     MissionCommandRejected: class extends Error {},
   };
 });
+jest.mock("@/realtime/catalog-commands", () => ({
+  executeCatalogRealtimeCommand: jest.fn(),
+  CatalogCommandRejected: class extends Error {
+    code = "CATALOG_SEARCH_FAILED";
+  },
+}));
 jest.mock("@/realtime/transport", () => ({
   createRealtimeTransport: (callbacks: typeof mockCallbacks) => {
     mockCallbacks = callbacks;
@@ -385,6 +393,43 @@ describe("LiveVoiceSheet mission commands", () => {
     await screen.unmount();
   });
 
+  it("does not let catalog search bypass a focused clarification", async () => {
+    const screen = await render(
+      <LiveVoiceSheet
+        visible
+        language="pl-PL"
+        missionId="mission-1"
+        focusedAction={{
+          id: "action-3",
+          revision: 6,
+          choice: "answer_by_voice",
+          question: "What should this purchase include?",
+          missingDetails: ["Shopping scope"],
+        }}
+        onSubmitFocusedAction={jest.fn(async () => updatedDetail)}
+        onClose={jest.fn()}
+      />,
+    );
+    await waitFor(() => expect(getRealtimeClientSecret).toHaveBeenCalled());
+
+    await act(async () => {
+      mockCallbacks.onEvent(responseDone("search_products", {
+        q: "Minecraft",
+      }, "call-search-during-clarification"));
+      await Promise.resolve();
+    });
+
+    expect(executeCatalogRealtimeCommand).not.toHaveBeenCalled();
+    expect(mockSend).toHaveBeenCalledWith(expect.objectContaining({
+      type: "conversation.item.create",
+      item: expect.objectContaining({
+        call_id: "call-search-during-clarification",
+        output: expect.stringContaining("CATALOG_SEARCH_UNAVAILABLE"),
+      }),
+    }));
+    await screen.unmount();
+  });
+
   it("keeps intake in Live until the mission has enough information to start", async () => {
     const onMissionCreated = jest.fn();
     const intakeDetail: MissionDetail = {
@@ -569,6 +614,95 @@ describe("LiveVoiceSheet mission commands", () => {
     await waitFor(() => expect(getRealtimeClientSecret).toHaveBeenCalledWith("en-PL", "mission-manual"));
     expect(screen.getByText("What delivery date and time do you need?")).toBeTruthy();
     expect(onMissionCreated).not.toHaveBeenCalled();
+    await screen.unmount();
+  });
+
+  it("searches every matching product in intake mode and returns the catalog output to the agent", async () => {
+    const offers: CatalogOffer[] = Array.from({ length: 29 }, (_, index) => ({
+      store_id: "store-smyk",
+      store_name: "Smyk",
+      city: "Warsaw",
+      product_id: `product-${index}`,
+      sku: `SKU-${index}`,
+      product_name: `Minecraft product ${index}`,
+      brand: "Minecraft",
+      category: "gifts",
+      unit_label: "1 item",
+      product_url: `https://example.test/products/${index}`,
+      price_cents: 1_000 + index,
+      currency: "PLN",
+      price_display: `${10 + index / 100} PLN`,
+      quantity: 5,
+      effective_status: "available",
+      is_available: true,
+      updated_at: "2026-07-11T13:00:00Z",
+    }));
+    const catalogOutput: CatalogCommandOutput = {
+      ok: true as const,
+      action: "catalog_searched" as const,
+      source: "researched_catalog" as const,
+      executable: false as const,
+      query: "Minecraft",
+      total: 29,
+      returned: 29,
+      complete: true,
+      offers,
+    };
+    jest.mocked(executeCatalogRealtimeCommand).mockResolvedValue({
+      result: {
+        offers,
+        total: 29,
+        limit: 150,
+        offset: 0,
+      },
+      output: catalogOutput,
+    });
+    const screen = await render(
+      <LiveVoiceSheet
+        visible
+        language="pl-PL"
+        onClose={jest.fn()}
+        onSubmitTranscript={jest.fn()}
+      />,
+    );
+    await waitFor(() => expect(getRealtimeClientSecret).toHaveBeenCalledWith("pl-PL", undefined));
+
+    const searchCall = responseDone("search_products", {
+      q: "Minecraft",
+      category: "gifts",
+      available: true,
+      sort: "price_asc",
+    }, "call-search-products");
+    await act(async () => {
+      mockCallbacks.onEvent(searchCall);
+      mockCallbacks.onEvent(searchCall);
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(executeCatalogRealtimeCommand).toHaveBeenCalledWith({
+      name: "search_products",
+      callId: "call-search-products",
+      query: "Minecraft",
+      category: "gifts",
+      available: true,
+      sort: "price_asc",
+    }));
+    expect(executeCatalogRealtimeCommand).toHaveBeenCalledTimes(1);
+    expect(executeMissionRealtimeCommand).not.toHaveBeenCalled();
+    expect(mockSend).toHaveBeenCalledWith({
+      type: "conversation.item.create",
+      item: {
+        type: "function_call_output",
+        call_id: "call-search-products",
+        output: JSON.stringify(catalogOutput),
+      },
+    });
+    expect(mockSend).toHaveBeenCalledWith(expect.objectContaining({
+      type: "response.create",
+      response: expect.objectContaining({
+        instructions: expect.stringContaining("every matching offer"),
+      }),
+    }));
     await screen.unmount();
   });
 

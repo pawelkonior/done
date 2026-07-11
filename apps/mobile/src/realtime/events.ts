@@ -35,9 +35,28 @@ type RealtimeCommandBase<Name extends string> = {
   callId: string;
 };
 
+type CatalogEffectiveStatus =
+  | "available"
+  | "low_stock"
+  | "out_of_stock"
+  | "discontinued"
+  | "store_unavailable";
+type CatalogSort = "price_asc" | "price_desc" | "product" | "store";
+
 export type RealtimeCommand =
   | (RealtimeCommandBase<"submit_mission"> & {
       transcript: string;
+    })
+  | (RealtimeCommandBase<"search_products"> & {
+      query: string;
+      storeId?: string;
+      productId?: string;
+      category?: string;
+      effectiveStatus?: CatalogEffectiveStatus;
+      available?: boolean;
+      minPriceCents?: number;
+      maxPriceCents?: number;
+      sort?: CatalogSort;
     })
   | (RealtimeCommandBase<"confirm_contract"> & {
       missionId: string;
@@ -98,6 +117,19 @@ const MAX_CHOICE_LENGTH = 100;
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 const SHA256_PLAN_HASH = /^sha256:[0-9a-f]{64}$/;
 const SUPPORTED_CURRENCIES = new Set(["PLN", "EUR", "USD"] as const);
+const CATALOG_EFFECTIVE_STATUSES: ReadonlySet<string> = new Set([
+  "available",
+  "low_stock",
+  "out_of_stock",
+  "discontinued",
+  "store_unavailable",
+] as const);
+const CATALOG_SORTS: ReadonlySet<string> = new Set([
+  "price_asc",
+  "price_desc",
+  "product",
+  "store",
+]);
 
 function jsonRecord(value: unknown): JsonRecord | null {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -127,6 +159,11 @@ function safeId(value: unknown): string | null {
   return normalized && SAFE_ID.test(normalized) ? normalized : null;
 }
 
+function safeCatalogId(value: unknown): string | null {
+  const normalized = boundedText(value, 1, 100);
+  return normalized && SAFE_ID.test(normalized) ? normalized : null;
+}
+
 function planHash(value: unknown): string | null {
   return typeof value === "string" && SHA256_PLAN_HASH.test(value) ? value : null;
 }
@@ -143,6 +180,26 @@ function positiveAmount(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
 }
 
+function nonNegativeInteger(value: unknown): number | null {
+  return typeof value === "number"
+    && Number.isSafeInteger(value)
+    && value >= 0
+    ? value
+    : null;
+}
+
+function catalogEffectiveStatus(value: unknown): CatalogEffectiveStatus | null {
+  return typeof value === "string" && CATALOG_EFFECTIVE_STATUSES.has(value)
+    ? value as CatalogEffectiveStatus
+    : null;
+}
+
+function catalogSort(value: unknown): CatalogSort | null {
+  return typeof value === "string" && CATALOG_SORTS.has(value)
+    ? value as CatalogSort
+    : null;
+}
+
 function supportedCurrency(value: unknown): "PLN" | "EUR" | "USD" | null {
   if (typeof value !== "string") return null;
   const normalized = value.trim();
@@ -156,6 +213,77 @@ function parseCommandArguments(
   callId: string,
   args: JsonRecord,
 ): RealtimeCommand | null {
+  if (name === "search_products") {
+    if (!hasExactKeys(args, ["q"], [
+      "store_id",
+      "product_id",
+      "category",
+      "effective_status",
+      "available",
+      "min_price_cents",
+      "max_price_cents",
+      "sort",
+    ])) {
+      return null;
+    }
+    const query = boundedText(args.q, 1, 200);
+    const storeId = args.store_id === undefined
+      ? undefined
+      : safeCatalogId(args.store_id);
+    const productId = args.product_id === undefined
+      ? undefined
+      : safeCatalogId(args.product_id);
+    const category = args.category === undefined
+      ? undefined
+      : boundedText(args.category, 1, 64);
+    const effectiveStatus = args.effective_status === undefined
+      ? undefined
+      : catalogEffectiveStatus(args.effective_status);
+    const available = args.available === undefined
+      ? undefined
+      : typeof args.available === "boolean"
+        ? args.available
+        : null;
+    const minPriceCents = args.min_price_cents === undefined
+      ? undefined
+      : nonNegativeInteger(args.min_price_cents);
+    const maxPriceCents = args.max_price_cents === undefined
+      ? undefined
+      : nonNegativeInteger(args.max_price_cents);
+    const sort = args.sort === undefined
+      ? undefined
+      : catalogSort(args.sort);
+    if (
+      !query
+      || storeId === null
+      || productId === null
+      || category === null
+      || effectiveStatus === null
+      || available === null
+      || minPriceCents === null
+      || maxPriceCents === null
+      || sort === null
+      || (minPriceCents !== undefined
+        && maxPriceCents !== undefined
+        && minPriceCents > maxPriceCents)
+    ) {
+      return null;
+    }
+    return {
+      name,
+      callId,
+      query,
+      ...(storeId === undefined ? {} : { storeId }),
+      ...(productId === undefined ? {} : { productId }),
+      ...(category === undefined ? {} : { category }),
+      ...(effectiveStatus === undefined ? {} : { effectiveStatus }),
+      ...(available === undefined ? {} : { available }),
+      ...(minPriceCents === undefined ? {} : { minPriceCents }),
+      ...(maxPriceCents === undefined ? {} : { maxPriceCents }),
+      ...(sort === undefined ? {} : { sort }),
+    };
+  }
+
   if (name === "submit_mission") {
     if (!hasExactKeys(args, ["transcript"])) return null;
     const transcript = boundedText(args.transcript, 3, MAX_TEXT_LENGTH);

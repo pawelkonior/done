@@ -140,6 +140,114 @@ def test_catalog_search_price_range_and_pagination(client: TestClient) -> None:
     assert all(1000 <= offer["price_cents"] <= 2000 for offer in payload["offers"])
 
 
+def test_dedicated_catalog_search_returns_paginated_products(
+    client: TestClient,
+) -> None:
+    response = client.get(
+        "/v1/catalog/search",
+        params={
+            "q": "  minecraft  ",
+            "category": "gifts",
+            "available": "true",
+            "sort": "price_asc",
+            "limit": 5,
+            "offset": 1,
+        },
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+
+    assert payload["total"] > 5
+    assert payload["limit"] == 5
+    assert payload["offset"] == 1
+    assert len(payload["offers"]) == 5
+    assert payload["items"] == payload["offers"]
+    assert all(offer["category"] == "gifts" for offer in payload["offers"])
+    assert all(offer["is_available"] for offer in payload["offers"])
+    assert all(
+        "minecraft"
+        in " ".join(
+            (
+                offer["product_name"],
+                offer["brand"],
+                offer["sku"],
+                offer["store_name"],
+            )
+        ).casefold()
+        for offer in payload["offers"]
+    )
+    assert [offer["price_cents"] for offer in payload["offers"]] == sorted(
+        offer["price_cents"] for offer in payload["offers"]
+    )
+
+    legacy = client.get(
+        "/v1/catalog/offers",
+        params={
+            "q": "minecraft",
+            "category": "gifts",
+            "available": "true",
+            "sort": "price_asc",
+            "limit": 5,
+            "offset": 1,
+        },
+    )
+    assert legacy.status_code == 200, legacy.text
+    assert legacy.json() == payload
+
+
+def test_dedicated_catalog_search_validates_query_and_treats_wildcards_literally(
+    client: TestClient,
+) -> None:
+    missing = client.get("/v1/catalog/search")
+    assert missing.status_code == 422
+
+    blank = client.get("/v1/catalog/search", params={"q": "   "})
+    assert blank.status_code == 422
+    assert blank.json()["detail"]["error"] == "invalid_catalog_query"
+
+    wildcard = client.get("/v1/catalog/search", params={"q": "%"})
+    assert wildcard.status_code == 200, wildcard.text
+    wildcard_payload = wildcard.json()
+    assert 0 < wildcard_payload["total"] < 140
+    assert all(
+        "%"
+        in " ".join(
+            (
+                offer["product_name"],
+                offer["brand"],
+                offer["sku"],
+                offer["store_name"],
+            )
+        )
+        for offer in wildcard_payload["offers"]
+    )
+
+    underscore = client.get("/v1/catalog/search", params={"q": "_"})
+    assert underscore.status_code == 200, underscore.text
+    assert underscore.json()["total"] == 0
+
+    no_match = client.get("/v1/catalog/search", params={"q": "no-such-product"})
+    assert no_match.status_code == 200, no_match.text
+    assert no_match.json()["total"] == 0
+    assert no_match.json()["items"] == []
+
+
+def test_dedicated_catalog_search_is_unicode_case_insensitive(
+    client: TestClient,
+) -> None:
+    result_ids: list[set[tuple[str, str]]] = []
+    for query in ("Świeczka", "świeczka", "ŚWIECZKA"):
+        response = client.get("/v1/catalog/search", params={"q": query})
+        assert response.status_code == 200, response.text
+        offers = response.json()["offers"]
+        assert offers
+        result_ids.append(
+            {(offer["store_id"], offer["product_id"]) for offer in offers}
+        )
+
+    assert result_ids[0] == result_ids[1] == result_ids[2]
+
+
 def test_catalog_empty_and_invalid_filters(client: TestClient) -> None:
     empty = client.get(
         "/v1/catalog/offers", params={"store_id": "store-does-not-exist"}

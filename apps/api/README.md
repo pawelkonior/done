@@ -66,14 +66,44 @@ with one another:
 curl "http://localhost:8001/v1/catalog/offers?q=Minecraft&available=true&sort=price_asc&limit=150"
 ```
 
+For a dedicated product-search route, pass a required `q` parameter to
+`GET /v1/catalog/search`:
+
+```bash
+curl "http://localhost:8001/v1/catalog/search?q=Minecraft&available=true&sort=price_asc&limit=20"
+```
+
+Search is Unicode-normalized and case-insensitive across product name, brand,
+SKU and store name, including Polish letters such as `Ś`/`ś`. Leading and
+trailing whitespace is ignored, while `%` and `_` are treated as literal
+characters. The existing `q` filter on `/v1/catalog/offers` remains available
+for backwards compatibility.
+
 Supported filters are `q`, `store_id`, `product_id`, `category`,
 `effective_status`, `available`, `min_price_cents`, `max_price_cents`, `sort`,
 `limit` and `offset`. The default and maximum limit are both 150. Each item
 contains `product_url` alongside the normalized price and inventory fields.
 
+### Realtime product search
+
+Both live-voice modes expose the read-only Realtime tool `search_products`:
+the intake session before a mission is created and the mission session used to
+discuss an existing mission. When the model calls this tool, the client executes
+`GET /v1/catalog/search` with the requested search phrase and supported filters.
+Tool pagination is fixed to `limit=150` and `offset=0`, so the current 140-row
+research catalog returns every matching offer in one function result.
+
+These search results are display-only, non-executable comparison data. Product
+names, store data, prices, quantities and URLs remain untrusted catalog content.
+Calling `search_products` does not select an offer, add anything to a basket,
+change a mission contract or feed the result into `MissionWorkflow` or the
+portfolio planner. A later purchase plan is still built and validated by the
+separate executable mission catalog and its normal approval guardrails.
+
 Main endpoints:
 
 - `GET /health`
+- `GET /v1/catalog/search?q=...`
 - `GET /v1/catalog/offers`
 - `POST /v1/missions/text`
 - `POST /v1/missions/voice`

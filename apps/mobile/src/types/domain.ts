@@ -334,6 +334,56 @@ export interface RuntimeCapabilities {
   demo_endpoints: boolean;
 }
 
+export type CatalogEffectiveStatus =
+  | "available"
+  | "low_stock"
+  | "out_of_stock"
+  | "discontinued"
+  | "store_unavailable";
+
+export type CatalogSort = "price_asc" | "price_desc" | "product" | "store";
+
+export interface CatalogSearchInput {
+  q: string;
+  store_id?: string;
+  product_id?: string;
+  category?: string;
+  effective_status?: CatalogEffectiveStatus;
+  available?: boolean;
+  min_price_cents?: number;
+  max_price_cents?: number;
+  sort?: CatalogSort;
+  limit?: number;
+  offset?: number;
+}
+
+export interface CatalogOffer {
+  store_id: string;
+  store_name: string;
+  city: string;
+  product_id: string;
+  sku: string;
+  product_name: string;
+  brand: string;
+  category: string;
+  unit_label: string;
+  product_url: string;
+  price_cents: number;
+  currency: string;
+  price_display: string;
+  quantity: number;
+  effective_status: CatalogEffectiveStatus;
+  is_available: boolean;
+  updated_at: string;
+}
+
+export interface CatalogSearchResponse {
+  offers: CatalogOffer[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 export interface RealtimeClientSecret {
   value: string;
   expires_at: number;

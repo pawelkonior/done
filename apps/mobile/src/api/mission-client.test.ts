@@ -5,6 +5,7 @@ import {
   createVoiceMission,
   listMissions,
   replanMission,
+  searchCatalogProducts,
   selectDeliveryOption,
 } from "@/api/client";
 import { File as ExpoFile } from "expo-file-system";
@@ -93,6 +94,61 @@ describe("mission API client", () => {
     expect(url).toContain("completed_to=2026-07-11");
     expect(url).toContain("sort=oldest");
     expect(url).toContain("requires_action=false");
+  });
+
+  it("searches the complete researched catalog with encoded product filters", async () => {
+    fetchMock.mockResolvedValue(response({
+      items: [{
+        store_id: "store-smyk",
+        store_name: "Smyk",
+        city: "Warsaw",
+        product_id: "product-minecraft-candle",
+        sku: "SMYK-1",
+        product_name: "Świeczka Minecraft 50%",
+        brand: "Party",
+        category: "cake_accessories",
+        unit_label: "1 szt.",
+        product_url: "https://example.test/minecraft-candle",
+        price_cents: 899,
+        currency: "PLN",
+        price_display: "8.99 PLN",
+        quantity: 3,
+        effective_status: "available",
+        is_available: true,
+        updated_at: "2026-07-11T13:00:00Z",
+      }],
+      total: 1,
+      limit: 150,
+      offset: 0,
+    }));
+
+    const result = await searchCatalogProducts({
+      q: "  Świeczka 50%  ",
+      store_id: "store-smyk",
+      category: "cake_accessories",
+      available: true,
+      min_price_cents: 500,
+      max_price_cents: 1000,
+      sort: "price_asc",
+    });
+
+    const requestUrl = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(requestUrl.pathname).toBe("/v1/catalog/search");
+    expect(requestUrl.searchParams.get("q")).toBe("Świeczka 50%");
+    expect(requestUrl.searchParams.get("store_id")).toBe("store-smyk");
+    expect(requestUrl.searchParams.get("category")).toBe("cake_accessories");
+    expect(requestUrl.searchParams.get("available")).toBe("true");
+    expect(requestUrl.searchParams.get("min_price_cents")).toBe("500");
+    expect(requestUrl.searchParams.get("max_price_cents")).toBe("1000");
+    expect(requestUrl.searchParams.get("sort")).toBe("price_asc");
+    expect(requestUrl.searchParams.get("limit")).toBe("150");
+    expect(requestUrl.searchParams.get("offset")).toBe("0");
+    expect(result.total).toBe(1);
+    expect(result.offers[0]).toEqual(expect.objectContaining({
+      product_name: "Świeczka Minecraft 50%",
+      price_cents: 899,
+      is_available: true,
+    }));
   });
 
   it("adds the optional private-deployment bearer token without changing demo mode", async () => {
