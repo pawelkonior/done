@@ -1,5 +1,5 @@
-import { act, render, waitFor } from "@testing-library/react-native";
-import { getRealtimeClientSecret } from "@/api/client";
+import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
+import { getRealtimeClientSecret, resolveActionRequest } from "@/api/client";
 import { LiveVoiceSheet } from "@/components/LiveVoiceSheet";
 import { executeMissionRealtimeCommand } from "@/realtime/mission-commands";
 import type { MissionDetail } from "@/types/domain";
@@ -15,6 +15,7 @@ let mockCallbacks: {
 
 jest.mock("@/api/client", () => ({
   getRealtimeClientSecret: jest.fn(),
+  resolveActionRequest: jest.fn(),
 }));
 jest.mock("@/realtime/mission-commands", () => {
   return {
@@ -384,12 +385,44 @@ describe("LiveVoiceSheet mission commands", () => {
     await screen.unmount();
   });
 
-  it("preserves intake mode and does not execute mission commands", async () => {
+  it("keeps intake in Live until the mission has enough information to start", async () => {
     const onMissionCreated = jest.fn();
+    const intakeDetail: MissionDetail = {
+      ...updatedDetail,
+      mission: {
+        ...updatedDetail.mission,
+        id: "mission-new",
+        status: "clarification_required",
+        revision: 2,
+      },
+      action_requests: [{
+        id: "action-intake",
+        type: "clarification",
+        reason_code: "MISSION_CONTRACT_INCOMPLETE",
+        question: "What delivery date and time do you need?",
+        status: "pending",
+        owner: "user",
+        options: [{ id: "answer_by_voice", label: "Answer by voice" }],
+        context: { missing_information: ["deadline"] },
+        created_at: "2026-07-11T10:03:00Z",
+      }],
+    };
     const onSubmitTranscript = jest.fn(async () => ({
       mission_id: "mission-new",
       status: "clarification_required" as const,
+      detail: intakeDetail,
     }));
+    const readyDetail: MissionDetail = {
+      ...updatedDetail,
+      mission: {
+        ...updatedDetail.mission,
+        id: "mission-new",
+        status: "approval_required",
+        revision: 3,
+      },
+      action_requests: [],
+    };
+    jest.mocked(resolveActionRequest).mockResolvedValue(readyDetail);
     const screen = await render(
       <LiveVoiceSheet
         visible
@@ -438,14 +471,104 @@ describe("LiveVoiceSheet mission commands", () => {
           ok: true,
           mission_id: "mission-new",
           status: "clarification_required",
+          needs_clarification: true,
+          next_question: "What delivery date and time do you need?",
+          missing_details: ["Delivery date and time"],
         }),
       },
     });
+    await waitFor(() => expect(getRealtimeClientSecret).toHaveBeenCalledWith("pl-PL", "mission-new"));
+    expect(screen.getByText("What delivery date and time do you need?")).toBeTruthy();
+    expect(onMissionCreated).not.toHaveBeenCalled();
+
+    await act(async () => {
+      mockCallbacks.onEvent({
+        type: "input_audio_buffer.committed",
+        item_id: "item-follow-up",
+        previous_item_id: null,
+      });
+      mockCallbacks.onEvent({
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "item-follow-up",
+        content_index: 0,
+        transcript: "Deliver tomorrow by 5 PM.",
+      });
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(resolveActionRequest).toHaveBeenCalledWith("action-intake", {
+      choice: "answer_by_voice",
+      voice_transcript: "Deliver tomorrow by 5 PM.",
+      expected_revision: 2,
+    }));
+    expect(onMissionCreated).not.toHaveBeenCalled();
     await act(async () => {
       mockCallbacks.onEvent({ type: "response.done", response: { output: [] } });
       await new Promise((resolve) => setTimeout(resolve, 300));
     });
     expect(onMissionCreated).toHaveBeenCalledWith("mission-new");
+    await screen.unmount();
+  });
+
+  it("keeps the manual Create mission submission in Live when details are missing", async () => {
+    const onMissionCreated = jest.fn();
+    const draftDetail: MissionDetail = {
+      ...updatedDetail,
+      mission: {
+        ...updatedDetail.mission,
+        id: "mission-manual",
+        status: "clarification_required",
+        revision: 2,
+      },
+      action_requests: [{
+        id: "action-manual",
+        type: "clarification",
+        reason_code: "MISSION_CONTRACT_INCOMPLETE",
+        question: "What delivery date and time do you need?",
+        status: "pending",
+        owner: "user",
+        options: [{ id: "answer_by_voice", label: "Answer by voice" }],
+        context: { missing_information: ["deadline"] },
+        created_at: "2026-07-11T10:03:00Z",
+      }],
+    };
+    const onSubmitTranscript = jest.fn(async () => ({
+      mission_id: "mission-manual",
+      status: "clarification_required" as const,
+      detail: draftDetail,
+    }));
+    const screen = await render(
+      <LiveVoiceSheet
+        visible
+        language="en-PL"
+        onClose={jest.fn()}
+        onSubmitTranscript={onSubmitTranscript}
+        onMissionCreated={onMissionCreated}
+      />,
+    );
+    await waitFor(() => expect(getRealtimeClientSecret).toHaveBeenCalledWith("en-PL", undefined));
+    await act(async () => {
+      mockCallbacks.onEvent({
+        type: "input_audio_buffer.committed",
+        item_id: "item-manual",
+        previous_item_id: null,
+      });
+      mockCallbacks.onEvent({
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "item-manual",
+        content_index: 0,
+        transcript: "Buy birthday party supplies for ten guests.",
+      });
+      await Promise.resolve();
+    });
+
+    await fireEvent.press(screen.getByTestId("submit-live-transcript"));
+
+    await waitFor(() => expect(onSubmitTranscript).toHaveBeenCalledWith(
+      "Buy birthday party supplies for ten guests.",
+    ));
+    await waitFor(() => expect(getRealtimeClientSecret).toHaveBeenCalledWith("en-PL", "mission-manual"));
+    expect(screen.getByText("What delivery date and time do you need?")).toBeTruthy();
+    expect(onMissionCreated).not.toHaveBeenCalled();
     await screen.unmount();
   });
 

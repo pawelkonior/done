@@ -11,8 +11,9 @@ import {
 } from "react-native";
 import { AudioLines, Check, RefreshCw, Sparkles, X } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { getRealtimeClientSecret } from "@/api/client";
-import type { CreateMissionResponse, MissionDetail } from "@/types/domain";
+import { getRealtimeClientSecret, resolveActionRequest } from "@/api/client";
+import { actionMissingDetails, actionQuestion } from "@/lib/action-request";
+import type { ActionRequest, CreateMissionResponse, MissionDetail } from "@/types/domain";
 import {
   parseRealtimeCommand,
   parseTranscriptFailure,
@@ -75,6 +76,15 @@ const inputStatusCopy: Record<InputStatus, string> = {
 const errorMessage = (error: unknown) =>
   error instanceof Error ? error.message : "Live voice could not start.";
 
+function pendingVoiceClarification(detail?: MissionDetail): ActionRequest | undefined {
+  return detail?.action_requests?.find(
+    (candidate) => candidate.status === "pending"
+      && candidate.owner === "user"
+      && candidate.type === "clarification"
+      && candidate.options.some((option) => option.id === "answer_by_voice"),
+  );
+}
+
 export function LiveVoiceSheet({
   visible,
   language,
@@ -111,6 +121,9 @@ export function LiveVoiceSheet({
   const [inputStatus, setInputStatus] = useState<InputStatus>("connecting");
   const [transcriptError, setTranscriptError] = useState<string | null>(null);
   const [createdMissionId, setCreatedMissionId] = useState<string | null>(null);
+  const [intakeMissionId, setIntakeMissionId] = useState<string | null>(null);
+  const [intakeRevision, setIntakeRevision] = useState<number | null>(null);
+  const [intakeFocusedAction, setIntakeFocusedAction] = useState<ActionRequest | null>(null);
   const [retryKey, setRetryKey] = useState(0);
   const transportRef = useRef<RealtimeTransport | null>(null);
   const onSubmitRef = useRef(onSubmitTranscript);
@@ -121,6 +134,8 @@ export function LiveVoiceSheet({
   const focusedActionRef = useRef(focusedAction);
   const onSubmitFocusedActionRef = useRef(onSubmitFocusedAction);
   const focusedActionSubmittedRef = useRef(false);
+  const intakeMissionIdRef = useRef<string | null>(null);
+  const intakeFocusedActionRef = useRef<ActionRequest | null>(null);
   const generationRef = useRef(0);
   const submittingRef = useRef(false);
   const createdMissionIdRef = useRef<string | null>(null);
@@ -137,6 +152,15 @@ export function LiveVoiceSheet({
   const focusedActionCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const transcriptBufferRef = useRef(new RealtimeTranscriptBuffer());
   const transcriptScrollRef = useRef<ScrollView | null>(null);
+  const sessionMissionId = activeMissionId ?? intakeMissionId ?? undefined;
+  const internalFocusedAction = intakeFocusedAction ? {
+    id: intakeFocusedAction.id,
+    revision: intakeRevision ?? 0,
+    choice: "answer_by_voice" as const,
+    question: actionQuestion(intakeFocusedAction),
+    missingDetails: actionMissingDetails(intakeFocusedAction),
+  } : undefined;
+  const effectiveFocusedAction = focusedAction ?? internalFocusedAction;
 
   useEffect(() => {
     onSubmitRef.current = onSubmitTranscript;
@@ -159,9 +183,32 @@ export function LiveVoiceSheet({
   }, [onClose]);
 
   useEffect(() => {
-    focusedActionRef.current = focusedAction;
-    onSubmitFocusedActionRef.current = onSubmitFocusedAction;
-  }, [focusedAction, onSubmitFocusedAction]);
+    focusedActionRef.current = effectiveFocusedAction;
+    onSubmitFocusedActionRef.current = onSubmitFocusedAction ?? (intakeFocusedAction
+      ? (voiceTranscript: string) => resolveActionRequest(intakeFocusedAction.id, {
+        choice: "answer_by_voice",
+        voice_transcript: voiceTranscript,
+        expected_revision: effectiveFocusedAction?.revision ?? 0,
+      })
+      : undefined);
+  }, [effectiveFocusedAction, intakeFocusedAction, onSubmitFocusedAction]);
+
+  useEffect(() => {
+    intakeMissionIdRef.current = intakeMissionId;
+  }, [intakeMissionId]);
+
+  useEffect(() => {
+    intakeFocusedActionRef.current = intakeFocusedAction;
+  }, [intakeFocusedAction]);
+
+  useEffect(() => {
+    if (visible) return;
+    intakeMissionIdRef.current = null;
+    intakeFocusedActionRef.current = null;
+    setIntakeMissionId(null);
+    setIntakeRevision(null);
+    setIntakeFocusedAction(null);
+  }, [visible]);
 
   const rebuildTranscript = useCallback(() => {
     setTranscript(transcriptBufferRef.current.previewText());
@@ -191,13 +238,13 @@ export function LiveVoiceSheet({
       setStatus("complete");
       setInputStatus("captured");
       onMissionUpdatedRef.current?.(detail);
-      const nextClarification = detail.action_requests?.find(
-        (candidate) => candidate.status === "pending"
-          && candidate.owner === "user"
-          && candidate.type === "clarification"
-          && candidate.options.some((option) => option.id === "answer_by_voice"),
-      );
+      const nextClarification = pendingVoiceClarification(detail);
       if (nextClarification) {
+        if (intakeMissionIdRef.current) {
+          setIntakeMissionId(detail.mission.id);
+          setIntakeRevision(detail.mission.revision);
+          setIntakeFocusedAction(nextClarification);
+        }
         focusedActionSubmittedRef.current = false;
         latestTurnTranscriptRef.current = "";
         currentVoiceItemIdRef.current = null;
@@ -208,6 +255,31 @@ export function LiveVoiceSheet({
         setTranscriptError(null);
         transportRef.current?.disconnect();
         setRetryKey((value) => value + 1);
+        return;
+      }
+      if (intakeMissionIdRef.current) {
+        setIntakeFocusedAction(null);
+        setIntakeRevision(detail.mission.revision);
+        pendingMissionHandoffRef.current = detail.mission.id;
+        try {
+          transportRef.current?.send({
+            type: "response.create",
+            response: {
+              instructions: "Confirm in one short sentence that the mission has enough information to start. "
+                + `The authoritative mission status is ${detail.mission.status}. Do not claim a purchase completed.`,
+            },
+          });
+          if (missionHandoffTimerRef.current) clearTimeout(missionHandoffTimerRef.current);
+          missionHandoffTimerRef.current = setTimeout(() => {
+            const missionId = pendingMissionHandoffRef.current;
+            pendingMissionHandoffRef.current = null;
+            missionHandoffTimerRef.current = null;
+            if (missionId) onMissionCreatedRef.current?.(missionId);
+          }, 8_000);
+        } catch {
+          pendingMissionHandoffRef.current = null;
+          onMissionCreatedRef.current?.(detail.mission.id);
+        }
         return;
       }
       pendingFocusedActionCloseRef.current = true;
@@ -319,31 +391,71 @@ export function LiveVoiceSheet({
     setError(null);
     try {
       const submit = onSubmitRef.current;
-      if (!submit || activeMissionId) {
+      if (!submit || sessionMissionId) {
         throw new MissionCommandRejected(
           "INTAKE_COMMAND_UNAVAILABLE",
           "A new mission cannot be created from this existing-mission session.",
         );
       }
       const result = await submit(normalized);
+      const detail = result.detail;
+      const nextClarification = pendingVoiceClarification(detail);
       setTranscript((current) => current.trim().length >= 3 ? current : normalized);
       setInputStatus("captured");
+      setStatus("complete");
+      if (detail) onMissionUpdatedRef.current?.(detail);
+      if (nextClarification && detail) {
+        setIntakeMissionId(result.mission_id);
+        setIntakeRevision(detail.mission.revision);
+        setIntakeFocusedAction(nextClarification);
+        createdMissionIdRef.current = null;
+        setCreatedMissionId(null);
+        const output = {
+          ok: true,
+          mission_id: result.mission_id,
+          status: result.status,
+          needs_clarification: true,
+          next_question: actionQuestion(nextClarification),
+          missing_details: actionMissingDetails(nextClarification),
+        };
+        if (callId) replyToTool(callId, output, true);
+        else {
+          transportRef.current?.send({
+            type: "response.create",
+            response: {
+              instructions: "Tell the user the draft was saved, then ask the next missing detail shown on screen. Stay in Live.",
+            },
+          });
+        }
+        scheduleMissionSessionRefresh();
+        return;
+      }
+      if (result.status === "clarification_required") {
+        throw new MissionCommandRejected(
+          "CLARIFICATION_STATE_UNAVAILABLE",
+          "The mission still needs information, but its next question could not be loaded. Refresh and try again.",
+        );
+      }
       createdMissionIdRef.current = result.mission_id;
       setCreatedMissionId(result.mission_id);
-      setStatus("complete");
+      pendingMissionHandoffRef.current = result.mission_id;
       if (callId) {
         replyToTool(callId, { ok: true, mission_id: result.mission_id, status: result.status }, true);
-        pendingMissionHandoffRef.current = result.mission_id;
-        if (missionHandoffTimerRef.current) clearTimeout(missionHandoffTimerRef.current);
-        missionHandoffTimerRef.current = setTimeout(finishMissionHandoff, 8_000);
       } else {
-        onMissionCreatedRef.current?.(result.mission_id);
+        transportRef.current?.send({
+          type: "response.create",
+          response: {
+            instructions: "Confirm in one short sentence that the mission has enough information to start. Do not claim the purchase completed.",
+          },
+        });
       }
+      if (missionHandoffTimerRef.current) clearTimeout(missionHandoffTimerRef.current);
+      missionHandoffTimerRef.current = setTimeout(finishMissionHandoff, 8_000);
     } catch (submitError) {
       const safeMessage = submitError instanceof MissionCommandRejected
         ? submitError.message
         : "The mission creation result could not be verified. Check the mission list before trying again.";
-      setStatus(activeMissionId ? "ready" : "error");
+      setStatus(sessionMissionId ? "ready" : "error");
       setError(safeMessage);
       if (callId) {
         replyToTool(callId, {
@@ -357,14 +469,14 @@ export function LiveVoiceSheet({
     } finally {
       submittingRef.current = false;
     }
-  }, [activeMissionId, finishMissionHandoff, replyToTool]);
+  }, [finishMissionHandoff, replyToTool, scheduleMissionSessionRefresh, sessionMissionId]);
 
   const runMissionCommand = useCallback(async (
     command: Exclude<RealtimeCommand, { name: "submit_mission" }>,
   ) => {
     if (handledCallsRef.current.has(command.callId)) return;
     handledCallsRef.current.add(command.callId);
-    if (!activeMissionId) {
+    if (!sessionMissionId) {
       replyToTool(command.callId, {
         ok: false,
         error: {
@@ -410,7 +522,7 @@ export function LiveVoiceSheet({
         );
       }
       const result = await executeMissionRealtimeCommand(command, {
-        missionId: activeMissionId,
+        missionId: sessionMissionId,
         voiceTranscript,
       });
       setStatus("complete");
@@ -448,7 +560,7 @@ export function LiveVoiceSheet({
     } finally {
       submittingRef.current = false;
     }
-  }, [activeMissionId, replyToTool, scheduleMissionSessionRefresh, waitForCurrentVoiceEvidence]);
+  }, [replyToTool, scheduleMissionSessionRefresh, sessionMissionId, waitForCurrentVoiceEvidence]);
 
   const handleEvent = useCallback((event: unknown) => {
     const eventType = event && typeof event === "object" && "type" in event
@@ -606,7 +718,7 @@ export function LiveVoiceSheet({
 
     const start = async () => {
       try {
-        const secret = await getRealtimeClientSecret(language, activeMissionId);
+        const secret = await getRealtimeClientSecret(language, sessionMissionId);
         if (generation !== generationRef.current) return;
         await transport.connect(secret.value);
         if (generation !== generationRef.current) return;
@@ -615,7 +727,7 @@ export function LiveVoiceSheet({
           response: {
             instructions: focusedActionRef.current
               ? "Ask the user to answer the missing details shown on screen in one concise sentence. Do not call a tool; the app submits the verified microphone transcript directly."
-              : activeMissionId
+              : sessionMissionId
               ? "Greet the user in one short sentence in the configured language. Say you are ready to discuss "
                 + "the current mission and ask what they want to check, correct, approve, or escalate."
               : "Greet the user in one short sentence in the configured language and ask what "
@@ -646,10 +758,15 @@ export function LiveVoiceSheet({
       transport.disconnect();
       if (transportRef.current === transport) transportRef.current = null;
     };
-  }, [activeMissionId, handleEvent, language, retryKey, visible]);
+  }, [handleEvent, language, retryKey, sessionMissionId, visible]);
 
   const close = () => {
     transportRef.current?.disconnect();
+    intakeMissionIdRef.current = null;
+    intakeFocusedActionRef.current = null;
+    setIntakeMissionId(null);
+    setIntakeRevision(null);
+    setIntakeFocusedAction(null);
     onClose();
   };
 
@@ -658,9 +775,9 @@ export function LiveVoiceSheet({
     setRetryKey((value) => value + 1);
   };
 
-  const statusTitle = activeMissionId && status === "submitting"
+  const statusTitle = sessionMissionId && status === "submitting"
     ? "Updating mission…"
-    : activeMissionId && status === "complete"
+    : sessionMissionId && status === "complete"
       ? "Mission updated"
       : statusCopy[status];
   const inputCopy = inputStatusCopy[inputStatus];
@@ -682,11 +799,11 @@ export function LiveVoiceSheet({
             </Pressable>
           </View>
 
-          {focusedAction ? (
+          {effectiveFocusedAction ? (
             <View style={styles.focusedPrompt} testID="focused-action-prompt">
               <Text style={styles.focusedEyebrow}>Answer by voice</Text>
-              <Text style={styles.focusedQuestion}>{focusedAction.question}</Text>
-              {focusedAction.missingDetails.map((detail) => (
+              <Text style={styles.focusedQuestion}>{effectiveFocusedAction.question}</Text>
+              {effectiveFocusedAction.missingDetails.map((detail) => (
                 <Text key={detail} style={styles.focusedMissing}>• {detail}</Text>
               ))}
             </View>
@@ -733,7 +850,7 @@ export function LiveVoiceSheet({
                 <RefreshCw size={17} color={colors.primaryBright} />
                 <Text style={styles.secondaryText}>Try live again</Text>
               </Pressable>
-            ) : !activeMissionId && !createdMissionId && finalTranscript.length >= 3 ? (
+            ) : !sessionMissionId && !createdMissionId && finalTranscript.length >= 3 ? (
               <Pressable
                 onPress={() => void submitMission(finalTranscript)}
                 disabled={status === "submitting"}
