@@ -341,8 +341,18 @@ html, body {
 
 .topology-node[data-state="done"] { border-color: rgba(78, 240, 196, 0.58); }
 .topology-node[data-state="done"]::after { background: var(--mint); }
-.topology-node[data-state="active"] { border-color: var(--mint); box-shadow: 0 0 18px rgba(78, 240, 196, 0.15); }
-.topology-node[data-state="active"].warn { border-color: var(--warn); box-shadow: 0 0 18px rgba(255, 174, 51, 0.15); }
+.topology-node[data-state="active"] {
+  background: linear-gradient(145deg, rgba(78, 240, 196, 0.15), var(--panel));
+  border-color: var(--mint);
+  box-shadow: 0 0 22px rgba(78, 240, 196, 0.2), inset 0 0 0 1px rgba(78, 240, 196, 0.16);
+}
+.topology-node[data-state="active"] .topology-node-number { color: #06231a; background: var(--mint); border-color: var(--mint); }
+.topology-node[data-state="active"].warn {
+  background: linear-gradient(145deg, rgba(255, 174, 51, 0.16), var(--panel));
+  border-color: var(--warn);
+  box-shadow: 0 0 22px rgba(255, 174, 51, 0.2), inset 0 0 0 1px rgba(255, 174, 51, 0.16);
+}
+.topology-node[data-state="active"].warn .topology-node-number { color: #351d00; background: var(--warn); border-color: var(--warn); }
 
 .topology-node-header { display: flex; align-items: center; gap: 7px; }
 .topology-node-number {

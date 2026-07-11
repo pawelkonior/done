@@ -372,6 +372,7 @@ simulateBatchTwoButton.addEventListener("click", () => {
         severity: "info",
         created_at: new Date().toISOString(),
       });
+      graph.setActive("result", false);
       if (latestDetail) renderDetail(latestDetail);
     }, 1400),
     window.setTimeout(() => {
@@ -394,6 +395,9 @@ simulateBatchTwoButton.addEventListener("click", () => {
         severity: "info",
         created_at: new Date().toISOString(),
       });
+      if (latestDetail) renderDetail(latestDetail);
+    }, 4600),
+    window.setTimeout(() => {
       dispatch({
         type: "payment.attempted",
         title: "Replacement-store payment retries started",
@@ -401,7 +405,7 @@ simulateBatchTwoButton.addEventListener("click", () => {
         created_at: new Date().toISOString(),
       });
       if (latestDetail) renderDetail(latestDetail);
-    }, 4600),
+    }, 5600),
   ];
 });
 
