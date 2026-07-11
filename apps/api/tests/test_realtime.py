@@ -24,7 +24,7 @@ def realtime_settings(*, enabled: bool = True) -> RealtimeSettings:
         enabled=enabled,
         api_key="standard-server-key" if enabled else None,
         base_url="https://api.openai.test",
-        model="gpt-realtime-1.5",
+        model="gpt-realtime-2",
         voice="marin",
         transcription_model="gpt-realtime-whisper",
     )
@@ -38,7 +38,7 @@ def test_realtime_adapter_mints_scoped_ephemeral_secret() -> None:
         payload = json.loads(request.content)
         session = payload["session"]
         assert session["type"] == "realtime"
-        assert session["model"] == "gpt-realtime-1.5"
+        assert session["model"] == "gpt-realtime-2"
         assert session["audio"]["output"]["voice"] == "marin"
         assert session["audio"]["input"]["transcription"] == {
             "model": "gpt-realtime-whisper",
@@ -62,7 +62,7 @@ def test_realtime_adapter_mints_scoped_ephemeral_secret() -> None:
                 safety_identifier="hashed-user",
             )
             assert secret.value == "ephemeral-client-secret"
-            assert secret.model == "gpt-realtime-1.5"
+            assert secret.model == "gpt-realtime-2"
             assert "ephemeral-client-secret" not in repr(secret)
             assert "standard-server-key" not in repr(adapter.settings)
 
@@ -115,12 +115,12 @@ class FakeRealtime:
         return RealtimeClientSecret(
             value="short-lived-secret",
             expires_at=1_900_000_000,
-            model="gpt-realtime-1.5",
+            model="gpt-realtime-2",
             voice="marin",
         )
 
     async def health(self) -> RealtimeHealth:
-        return RealtimeHealth(status="available", model="gpt-realtime-1.5")
+        return RealtimeHealth(status="available", model="gpt-realtime-2")
 
     async def aclose(self) -> None:
         self.closed = True
@@ -146,7 +146,7 @@ def test_realtime_endpoint_returns_only_ephemeral_credentials(tmp_path: Path) ->
     assert response.json() == {
         "value": "short-lived-secret",
         "expires_at": 1_900_000_000,
-        "model": "gpt-realtime-1.5",
+        "model": "gpt-realtime-2",
         "voice": "marin",
     }
     assert "standard-server-key" not in response.text

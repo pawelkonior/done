@@ -224,12 +224,12 @@ export default function SettingsScreen() {
             />
           </SettingsSection>
 
-          <SettingsSection title="Local AI runtime">
+          <SettingsSection title="AI services">
             {runtime.data ? (
               <>
                 <RuntimeRow icon={Cpu} label="Ollama" capability={runtime.data.ai} />
-                <RuntimeRow icon={Mic2} label="Whisper" capability={runtime.data.speech_to_text} />
-                <RuntimeRow icon={Sparkles} label="ChatGPT Live" capability={runtime.data.realtime} />
+                <RuntimeRow icon={Mic2} label="OpenAI STT" capability={runtime.data.speech_to_text} />
+                <RuntimeRow icon={Sparkles} label="OpenAI Realtime" capability={runtime.data.realtime} />
               </>
             ) : (
               <View style={styles.runtimeLoading}>

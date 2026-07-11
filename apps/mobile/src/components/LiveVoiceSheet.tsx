@@ -45,7 +45,7 @@ const statusCopy: Record<LiveStatus, { title: string; subtitle: string }> = {
   speaking: { title: "Speaking", subtitle: "You can interrupt at any time" },
   submitting: { title: "Creating mission…", subtitle: "Deterministic safety rules are validating it" },
   complete: { title: "Mission ready", subtitle: "Open it to review progress and approvals" },
-  error: { title: "Live voice unavailable", subtitle: "Local voice and text are still available" },
+  error: { title: "Live voice unavailable", subtitle: "OpenAI transcription and text are still available" },
 };
 
 type InputStatus =
@@ -290,8 +290,8 @@ export function LiveVoiceSheet({
           <View style={styles.header}>
             <View style={styles.brandRow}>
               <Sparkles size={16} color={colors.primaryBright} />
-              <Text style={styles.eyebrow}>ChatGPT Live 1</Text>
-              <View style={styles.modelPill}><Text style={styles.modelText}>Realtime 1.5</Text></View>
+              <Text style={styles.eyebrow}>OpenAI Live</Text>
+              <View style={styles.modelPill}><Text style={styles.modelText}>GPT Realtime 2</Text></View>
             </View>
             <Pressable onPress={close} accessibilityRole="button" accessibilityLabel="Close" style={styles.close}>
               <X size={21} color={colors.textSecondary} />
@@ -385,7 +385,7 @@ export function LiveVoiceSheet({
               <View style={styles.fallbackRow}>
                 <Pressable onPress={close} style={({ pressed }) => [styles.fallbackButton, pressed && styles.pressed]}>
                   <Mic2 size={16} color={colors.textSecondary} />
-                  <Text style={styles.fallbackText}>Use local voice</Text>
+                  <Text style={styles.fallbackText}>Use GPT-4o Transcribe</Text>
                 </Pressable>
                 <Pressable onPress={() => { close(); onUseText(); }} style={({ pressed }) => [styles.fallbackButton, pressed && styles.pressed]}>
                   <Keyboard size={16} color={colors.textSecondary} />

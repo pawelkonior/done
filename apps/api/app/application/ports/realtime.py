@@ -18,7 +18,7 @@ class RealtimeClientSecret:
 class RealtimeHealth:
     status: Literal["available", "degraded", "unavailable"]
     provider: Literal["openai"] = "openai"
-    model: str = "gpt-realtime-1.5"
+    model: str = "gpt-realtime-2"
     detail: str | None = None
 
 

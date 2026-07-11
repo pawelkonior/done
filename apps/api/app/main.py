@@ -28,14 +28,22 @@ from .application.mission_service import (
 from .application.ports.ai import SpeechToTextPort, StructuredAIPort
 from .application.ports.realtime import RealtimeSessionPort
 from .application.user_service import UserApplicationService
-from .config import RealtimeSettings, get_ai_settings, get_realtime_settings
+from .config import (
+    RealtimeSettings,
+    get_ai_settings,
+    get_realtime_settings,
+    get_transcription_settings,
+)
 from .database import PRODUCTS, Database
 from .infrastructure.ai.ollama import OllamaAdapter
 from .infrastructure.ai.openai_realtime import (
     OpenAIRealtimeAdapter,
     RealtimeUnavailableError,
 )
-from .infrastructure.ai.whisper import WhisperSidecarAdapter, WhisperSidecarError
+from .infrastructure.ai.openai_transcription import (
+    OpenAITranscriptionAdapter,
+    OpenAITranscriptionError,
+)
 from .infrastructure.persistence.user_repository import SQLiteUserRepository
 from .presentation.user_router import create_user_router
 from .schemas import (
@@ -135,13 +143,14 @@ def create_app(
     user_service = UserApplicationService(SQLiteUserRepository(database))
     runtime_settings = mission_settings or MissionServiceSettings.from_env()
     ai_settings = get_ai_settings()
+    transcription_settings = get_transcription_settings()
     live_settings = realtime_settings or get_realtime_settings()
     resolved_ai = ai
     if runtime_settings.ai_enabled and resolved_ai is None:
         resolved_ai = OllamaAdapter(ai_settings)
     resolved_speech = speech_to_text
     if runtime_settings.stt_enabled and resolved_speech is None:
-        resolved_speech = WhisperSidecarAdapter(ai_settings)
+        resolved_speech = OpenAITranscriptionAdapter(transcription_settings)
     resolved_realtime = realtime
     if live_settings.enabled and resolved_realtime is None:
         resolved_realtime = OpenAIRealtimeAdapter(live_settings)
@@ -164,8 +173,8 @@ def create_app(
         title="Done API",
         version="1.0.0",
         description=(
-            "Local-first backend for voice-driven, self-healing commerce missions. "
-            "Safety-critical decisions are deterministic; Ollama is optional."
+            "Voice-driven, self-healing commerce missions with deterministic safety rules. "
+            "Ollama is optional; speech transcription uses the server-side OpenAI API."
         ),
         lifespan=lifespan,
     )
@@ -262,19 +271,15 @@ def create_app(
             content={"error": "empty_transcription", "message": str(exc)},
         )
 
-    @application.exception_handler(WhisperSidecarError)
+    @application.exception_handler(OpenAITranscriptionError)
     async def transcription_failed(
-        _: Request, exc: WhisperSidecarError
+        _: Request, exc: OpenAITranscriptionError
     ) -> JSONResponse:
         message = str(exc)
-        rejected = any(
-            marker in message
-            for marker in ("unsupported", "cannot be empty", "upload limit")
-        )
         return JSONResponse(
             status_code=(
                 status.HTTP_422_UNPROCESSABLE_CONTENT
-                if rejected
+                if exc.client_error
                 else status.HTTP_503_SERVICE_UNAVAILABLE
             ),
             content={"error": "transcription_failed", "message": message},
@@ -379,8 +384,8 @@ def create_app(
                     status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                     detail="multipart field 'file' is required",
                 )
-            data = await upload.read(ai_settings.whisper_max_upload_bytes + 1)
-            if len(data) > ai_settings.whisper_max_upload_bytes:
+            data = await upload.read(transcription_settings.max_upload_bytes + 1)
+            if len(data) > transcription_settings.max_upload_bytes:
                 raise HTTPException(
                     status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                     detail="audio exceeds the configured upload limit",

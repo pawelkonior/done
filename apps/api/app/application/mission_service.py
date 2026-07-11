@@ -164,7 +164,7 @@ class MissionApplicationService:
     ) -> dict[str, Any]:
         if not self.settings.stt_enabled or self.speech_to_text is None:
             raise SpeechInputUnavailableError(
-                "Voice recognition is disabled; start the local STT service or use text"
+                "Voice recognition is disabled; configure OpenAI transcription or use text"
             )
         transcription = await self.speech_to_text.transcribe(
             AudioPayload(
@@ -195,7 +195,7 @@ class MissionApplicationService:
         }
         stt_health: Any = {
             "status": "disabled",
-            "detail": "Set DONE_STT_ENABLED=true to enable local speech recognition.",
+            "detail": "Set DONE_STT_ENABLED=true to enable OpenAI speech recognition.",
         }
 
         tasks: list[tuple[str, Any]] = []
