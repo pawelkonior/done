@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { AudioLines, Check, Send, Sparkles } from "lucide-react-native";
-import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { AppScreen } from "@/components/AppScreen";
 import { ApprovalCard } from "@/components/ApprovalCard";
@@ -22,7 +22,7 @@ import { ProgressBar } from "@/components/ProgressBar";
 import { RecoveryBanner } from "@/components/RecoveryBanner";
 import { ScreenState } from "@/components/ScreenState";
 import { StatusPill } from "@/components/StatusPill";
-import { useCancelMission, useMission, useReplanMission, useRequestHumanSupport, useResolveActionRequest, useSelectDeliveryOption, useUserSettings } from "@/api/hooks";
+import { useMission, useUserSettings } from "@/api/hooks";
 import { statusToStep } from "@/lib/status";
 import { colors, radii, spacing, type } from "@/theme/tokens";
 
@@ -34,15 +34,8 @@ export default function MissionDetailScreen() {
   const missionId = id ?? "";
   const router = useRouter();
   const query = useMission(id);
-  const deliveryMutation = useSelectDeliveryOption(missionId);
-  const cancelMutation = useCancelMission(missionId);
-  const replanMutation = useReplanMission(missionId);
-  const actionMutation = useResolveActionRequest(missionId);
-  const supportMutation = useRequestHumanSupport(missionId);
   const settingsQuery = useUserSettings();
   const [liveVoiceOpen, setLiveVoiceOpen] = useState(false);
-  const [deliveryError, setDeliveryError] = useState<string | null>(null);
-  const [loadingOptionId, setLoadingOptionId] = useState<string | null>(null);
 
   const detail = query.data;
 
@@ -78,78 +71,23 @@ export default function MissionDetailScreen() {
         ? "Your optimized basket is ready"
         : mission.subtitle;
 
-  const cancelMission = async () => {
-    if (isTerminal) return;
-    try {
-      await cancelMutation.mutateAsync(mission.revision);
-    } catch (error) {
-      Alert.alert("Couldn’t cancel mission", messageFor(error));
-    }
-  };
-
-  const confirmCancel = () => {
-    Alert.alert("Cancel this mission?", "Current work will stop and pending approvals will be closed.", [
-      { text: "Keep mission", style: "cancel" },
-      { text: "Cancel mission", style: "destructive", onPress: () => void cancelMission() },
-    ]);
-  };
-
-  const replan = async () => {
-    try {
-      await replanMutation.mutateAsync(mission.revision);
-    } catch (error) {
-      Alert.alert("Couldn’t replan mission", messageFor(error));
-    }
-  };
-
   const showMenu = () => {
-    Alert.alert("Mission options", undefined, [
-      { text: "Refresh", onPress: () => void query.refetch() },
-      ...(!isTerminal ? [{ text: "Replan mission", onPress: () => void replan() }] : []),
-      ...(!isTerminal ? [{ text: "Cancel mission", style: "destructive" as const, onPress: confirmCancel }] : []),
-      { text: "Close", style: "cancel" },
-    ]);
+    if (!isTerminal) setLiveVoiceOpen(true);
   };
 
-  const selectDelivery = async (optionId: string) => {
+  const selectDelivery = (optionId: string) => {
     if (isTerminal || deliveryOptions.find((option) => option.id === optionId)?.selected) return;
-    setDeliveryError(null);
-    setLoadingOptionId(optionId);
-    try {
-      await deliveryMutation.mutateAsync({ option_id: optionId, expected_revision: mission.revision });
-    } catch (error) {
-      setDeliveryError(messageFor(error, "Couldn’t change the delivery option."));
-    } finally {
-      setLoadingOptionId(null);
-    }
+    setLiveVoiceOpen(true);
   };
 
-  const resolveAction = async (choice: string) => {
+  const resolveAction = (choice: string) => {
     if (!pendingAction) return;
-    if (choice === "answer_by_voice") {
-      setLiveVoiceOpen(true);
-      return;
-    }
-    try {
-      await actionMutation.mutateAsync({
-        actionRequestId: pendingAction.id,
-        choice,
-        expectedRevision: mission.revision,
-      });
-    } catch (error) {
-      Alert.alert("Couldn’t continue this mission", messageFor(error));
-    }
+    void choice;
+    setLiveVoiceOpen(true);
   };
 
-  const requestSupport = async () => {
-    try {
-      await supportMutation.mutateAsync({
-        reason: pendingAction?.reason_code,
-        expectedRevision: mission.revision,
-      });
-    } catch (error) {
-      Alert.alert("Couldn’t request human support", messageFor(error));
-    }
+  const requestSupport = () => {
+    setLiveVoiceOpen(true);
   };
 
   return (
@@ -192,9 +130,9 @@ export default function MissionDetailScreen() {
         <View style={styles.sectionGap}>
           <ActionRequestCard
             action={pendingAction}
-            loading={actionMutation.isPending || supportMutation.isPending}
-            onChoose={(choice) => void resolveAction(choice)}
-            onRequestHuman={() => void requestSupport()}
+            loading={false}
+            onChoose={resolveAction}
+            onRequestHuman={requestSupport}
           />
         </View>
       ) : null}
@@ -224,10 +162,9 @@ export default function MissionDetailScreen() {
         <View style={styles.sectionGap}>
           <DeliveryOptions
             options={deliveryOptions}
-            onSelect={(optionId) => void selectDelivery(optionId)}
-            loadingOptionId={loadingOptionId}
+            onSelect={selectDelivery}
+            loadingOptionId={null}
             disabled={isTerminal}
-            error={deliveryError}
           />
         </View>
       ) : null}
