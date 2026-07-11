@@ -29,6 +29,7 @@ checkout albo trwałe action request / wsparcie człowieka
 - Prawdziwe nagrywanie po długim przytrzymaniu mikrofonu przez `expo-audio`; API wysyła audio bezpośrednio do OpenAI Transcription z modelem `gpt-4o-transcribe`.
 - Deterministyczny interpreter zachowuje evidence z transkryptu i nie uzupełnia krytycznych pól domyślnymi wartościami. Niejasne „rzeczy na urodziny” powodują pytanie „prezenty czy wyposażenie przyjęcia?”, a brak godziny — osobne pytanie o termin.
 - Planista katalogowy wybiera produkty na podstawie wieku, liczby odbiorców, kategorii, ceny, stocku, merchanta i jawnych ograniczeń; obsługuje wyposażenie przyjęcia oraz neutralne wiekowo prezenty z podłączonego katalogu.
+- Osobny endpoint katalogowy udostępnia 140 zbadanych ofert urodzinowych dla wieku 7–8, w tym 29 produktów Minecraft, z prawdziwymi linkami do Allegro, Auchan, Delio, Kaufland, Lidl, Smyk i Decathlon; ceny są wersjonowanym snapshotem, a nie obietnicą ceny live.
 - FastAPI + trwałe SQLite, 14 produktów, 3 merchantów, kontrakty, eventy, koszyki, akceptacje, płatności, zamówienia i awarie.
 - Akceptacja jest związana z revision, plan hash, merchantem, kwotą i walutą. Stara albo niepełna zgoda nie może uruchomić rezerwacji, karty ani płatności.
 - Funding gate wymaga tego samego fingerprintu dla guardraili, akceptacji i aktywnej rezerwacji. Zapisywana jest wyłącznie restrykcyjna specyfikacja karty — bez PAN/CVV.
