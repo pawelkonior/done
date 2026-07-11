@@ -11,6 +11,9 @@ from pathlib import Path
 from typing import Iterator
 
 
+CATALOG_SQL_PATH = Path(__file__).resolve().parents[1] / "sql" / "mock_catalog.sql"
+
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
@@ -507,6 +510,7 @@ class Database:
             self._apply_migrations(connection)
             self._seed_reference_data(connection)
             connection.commit()
+            connection.executescript(CATALOG_SQL_PATH.read_text(encoding="utf-8"))
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
