@@ -20,6 +20,7 @@ function connectionError(error: unknown): Error {
   if (name === "NotReadableError" || name === "TrackStartError") {
     return new Error("The microphone is busy or unavailable. Close other audio apps and try again.");
   }
+  if (name === "AbortError") return new Error("Live voice negotiation timed out. Check your connection and try again.");
   if (error instanceof Error && !["TypeError", "NetworkError"].includes(name)) return error;
   return new Error("Live voice could not reach the voice service. Check your internet connection and try again.");
 }
@@ -71,6 +72,7 @@ class WebRealtimeTransport implements RealtimeTransport {
   private channel: RTCDataChannel | null = null;
   private localStream: MediaStream | null = null;
   private remoteAudio: HTMLAudioElement | null = null;
+  private negotiationAbort: AbortController | null = null;
   private generation = 0;
 
   constructor(private readonly callbacks: RealtimeTransportCallbacks) {}
@@ -122,14 +124,27 @@ class WebRealtimeTransport implements RealtimeTransport {
 
       const offer = await peer.createOffer();
       await peer.setLocalDescription(offer);
-      const sdpResponse = await fetch(OPENAI_REALTIME_CALLS_URL, {
-        method: "POST",
-        body: offer.sdp,
-        headers: {
-          Authorization: `Bearer ${ephemeralSecret}`,
-          "Content-Type": "application/sdp",
-        },
-      });
+      const negotiationAbort = new AbortController();
+      this.negotiationAbort = negotiationAbort;
+      const negotiationTimeout = setTimeout(
+        () => negotiationAbort.abort(),
+        CONNECTION_TIMEOUT_MS,
+      );
+      let sdpResponse: Response;
+      try {
+        sdpResponse = await fetch(OPENAI_REALTIME_CALLS_URL, {
+          method: "POST",
+          body: offer.sdp,
+          signal: negotiationAbort.signal,
+          headers: {
+            Authorization: `Bearer ${ephemeralSecret}`,
+            "Content-Type": "application/sdp",
+          },
+        });
+      } finally {
+        clearTimeout(negotiationTimeout);
+        if (this.negotiationAbort === negotiationAbort) this.negotiationAbort = null;
+      }
       if (!sdpResponse.ok) {
         throw new Error(`Live voice negotiation failed (${sdpResponse.status}).`);
       }
@@ -152,6 +167,8 @@ class WebRealtimeTransport implements RealtimeTransport {
 
   disconnect(): void {
     this.generation += 1;
+    this.negotiationAbort?.abort();
+    this.negotiationAbort = null;
     this.channel?.close();
     this.channel = null;
     for (const track of this.localStream?.getTracks() ?? []) track.stop();

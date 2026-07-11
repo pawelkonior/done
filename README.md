@@ -5,7 +5,7 @@ Done to mobilny, voice-first agent zakupowy, który zamienia wypowiedź w audyto
 Projekt realizuje kompletny scenariusz z `assets/execution_plan.md`:
 
 ```text
-komenda głosowa / tekstowa
+komenda głosowa
         ↓
 draft intencji + pytania o brakujące fakty
         ↓
@@ -25,7 +25,7 @@ checkout albo trwałe action request / wsparcie człowieka
 - Expo + React Native + Expo Router, działające na webie i przygotowane do iOS/Android.
 - Pięć zakładek: Now, Missions, Completed, Settings i Profile.
 - Interfejs odtworzony na podstawie screenów z `assets/`: ciemny motyw, neonowe akcenty, voice orb, karty, timeline, koszyk, opcje dostawy i ekran wyniku.
-- Rozmowa głosowa przez OpenAI Realtime i WebRTC: intake, korekty, odczyt stanu, dokładna akceptacja zakupu, wybór recovery, anulowanie i wezwanie człowieka są obsługiwane jako typowane komendy głosowe.
+- Rozmowa głosowa przez OpenAI Realtime i WebRTC: intake, korekty, odczyt pełnego planu, wybór dostawy, dokładna akceptacja zakupu, recovery, anulowanie i wezwanie człowieka są obsługiwane jako typowane komendy głosowe.
 - Prawdziwe nagrywanie po długim przytrzymaniu mikrofonu przez `expo-audio`; API wysyła audio bezpośrednio do OpenAI Transcription z modelem `gpt-4o-transcribe`.
 - Deterministyczny interpreter zachowuje evidence z transkryptu i nie uzupełnia krytycznych pól domyślnymi wartościami. Niejasne „rzeczy na urodziny” powodują pytanie „prezenty czy wyposażenie przyjęcia?”, a brak godziny — osobne pytanie o termin.
 - Planista katalogowy wybiera produkty na podstawie wieku, liczby odbiorców, kategorii, ceny, stocku, merchanta i jawnych ograniczeń; obsługuje wyposażenie przyjęcia oraz neutralne wiekowo prezenty z podłączonego katalogu.
@@ -61,11 +61,8 @@ WebRTC wymaga development buildu Done — Expo Go nie zawiera natywnego modułu
 `react-native-webrtc`. Telefon i komputer muszą być w tej samej sieci Wi-Fi.
 
 ```bash
-# terminal 1: API jest wystawione w sieci lokalnej na porcie 8001
-npm run api
-
-# terminal 2: Metro pokazuje kod QR dla development buildu
-npm run mobile
+# uruchamia API w LAN i Metro ze wspólnym, losowym bearer tokenem
+npm run phone
 ```
 
 Jednorazowo zbuduj i zainstaluj aplikację na podłączonym urządzeniu:
@@ -77,17 +74,12 @@ npx expo run:ios --device
 npx expo run:android --device
 ```
 
-W trybie developerskim aplikacja odczytuje adres hosta z Metro i łączy się z
+Launcher nie wypisuje tokenu i przekazuje go wyłącznie procesom API oraz Expo.
+Zwykłe `npm run api` pozostaje związane z `127.0.0.1`, więc nie wystawia
+niechronionego mintowania sekretów Realtime w sieci lokalnej. Aplikacja odczytuje
+adres hosta z Metro i łączy się z
 `http://<adres-komputera>:8001`. W innym środowisku ustaw jawnie
 `EXPO_PUBLIC_API_URL`; klucz `OPENAI_API_KEY` pozostaje wyłącznie na backendzie.
-
-Jeśli port 8001 jest zajęty, uruchom API na innym porcie i przekaż adres aplikacji:
-
-```bash
-cd apps/api
-uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8010
-EXPO_PUBLIC_API_URL=http://<adres-komputera>:8010 npm run mobile
-```
 
 ## Scenariusz demo
 

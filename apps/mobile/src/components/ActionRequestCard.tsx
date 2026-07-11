@@ -1,6 +1,7 @@
 import { AudioLines, Check, UserRound } from "lucide-react-native";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { GlassCard } from "@/components/GlassCard";
+import { actionMissingDetails, actionQuestion } from "@/lib/action-request";
 import { colors, radii, spacing, type } from "@/theme/tokens";
 import type { ActionRequest } from "@/types/domain";
 
@@ -32,6 +33,8 @@ export function ActionRequestCard({
   const showHumanSupport = Boolean(humanChoice || onRequestHuman);
   const statusLabel = pending ? "Voice decision needed" : `Request ${readableLabel(action.status).toLowerCase()}`;
   const reasonLabel = readableLabel(action.reason_code);
+  const question = actionQuestion(action);
+  const missingDetails = actionMissingDetails(action);
 
   const requestHumanSupport = () => {
     if (onRequestHuman) {
@@ -47,7 +50,7 @@ export function ActionRequestCard({
       accent={pending ? "rgba(255,184,77,0.46)" : undefined}
       style={styles.card}
       testID="action-request-card"
-      accessibilityLabel={`${statusLabel}. ${action.question}. Reason: ${reasonLabel}`}
+      accessibilityLabel={`${statusLabel}. ${question}. Reason: ${reasonLabel}`}
     >
       <View style={styles.header}>
         <View style={[styles.icon, !pending && styles.iconInactive]}>
@@ -68,10 +71,22 @@ export function ActionRequestCard({
             {loading ? <ActivityIndicator color={colors.warning} size="small" /> : null}
           </View>
           <Text style={styles.question} testID="action-request-question">
-            {action.question}
+            {question}
           </Text>
         </View>
       </View>
+
+      {missingDetails.length ? (
+        <View style={styles.missing} testID="action-request-missing">
+          <Text style={styles.missingTitle}>Still needed</Text>
+          {missingDetails.map((detail) => (
+            <View key={detail} style={styles.missingRow}>
+              <View style={styles.missingDot} />
+              <Text style={styles.missingText}>{detail}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
 
       <View style={styles.reason} testID="action-request-reason">
         <Text style={styles.reasonKey}>Reason</Text>
@@ -151,6 +166,11 @@ const styles = StyleSheet.create({
   },
   reasonKey: { ...type.caption, color: colors.textMuted, textTransform: "uppercase" },
   reasonValue: { ...type.smallMedium, color: colors.textSecondary },
+  missing: { marginTop: spacing.md, gap: spacing.xs },
+  missingTitle: { ...type.eyebrow, color: colors.textSecondary },
+  missingRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
+  missingDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.warning },
+  missingText: { ...type.small, color: colors.text },
   choices: { gap: spacing.xs, marginTop: spacing.md },
   choice: {
     minHeight: 52,

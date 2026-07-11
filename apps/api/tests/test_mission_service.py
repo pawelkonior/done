@@ -85,7 +85,7 @@ def test_general_request_uses_transcript_on_card_without_birthday_copy(tmp_path:
     assert detail["mission"]["title"] == "I want to buy a car"
     assert "urodzin" not in detail["mission"]["latest_update"].casefold()
     assert detail["action_requests"][0]["question"] == (
-        "Jakie wymagania powinien spełniać ten zakup?"
+        "What should this purchase include?"
     )
 
 

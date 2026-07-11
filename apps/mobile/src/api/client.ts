@@ -45,6 +45,7 @@ function localDevelopmentHost() {
 const defaultHost = localDevelopmentHost();
 export const API_URL =
   process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, "") ?? `http://${defaultHost}:8001`;
+const API_TIMEOUT_MS = 20_000;
 
 function apiAccessToken() {
   return process.env.EXPO_PUBLIC_API_ACCESS_TOKEN?.trim();
@@ -61,10 +62,20 @@ export class ApiError extends Error {
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const accessToken = apiAccessToken();
+  const controller = new AbortController();
+  let timedOut = false;
+  const abortFromCaller = () => controller.abort();
+  if (init?.signal?.aborted) controller.abort();
+  else init?.signal?.addEventListener("abort", abortFromCaller, { once: true });
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, API_TIMEOUT_MS);
   let response: Response;
   try {
     response = await fetch(`${API_URL}${path}`, {
       ...init,
+      signal: controller.signal,
       headers: {
         Accept: "application/json",
         ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
@@ -73,10 +84,19 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
       },
     });
   } catch {
+    if (timedOut) {
+      throw new ApiError(
+        `The Done server at ${API_URL} did not respond within 20 seconds. Review the mission state before retrying a change.`,
+        0,
+      );
+    }
     throw new ApiError(
       `Can't reach the Done server at ${API_URL}. Check that the backend is running and this device is on the same network.`,
       0,
     );
+  } finally {
+    clearTimeout(timeout);
+    init?.signal?.removeEventListener("abort", abortFromCaller);
   }
 
   if (!response.ok) {
