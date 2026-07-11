@@ -126,7 +126,7 @@ function subtitles(items: ItemProgress[]): NodeSubtitles {
   const result = byNode("result");
   const failed = purchase.filter((item) => item.state === "payment_failed");
   const activePurchase = purchase.filter((item) => item.state !== "payment_failed");
-  const output: NodeSubtitles = { model: `${items.length} basket items` };
+  const output: NodeSubtitles = { model: `${items.length} cart items` };
   if (planned.length > 0) output.model = `${planned.length} planned`;
   if (approval.length > 0) output.guardrails = `${approval.length} awaiting approval`;
   if (failed.length > 0 || activePurchase.length > 0) {

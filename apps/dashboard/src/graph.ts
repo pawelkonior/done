@@ -1,5 +1,6 @@
 import { NODES } from "./mapping";
-import type { CartSnapshot, NodeDetail, NodeDetails, NodeId, NodeSubtitles, ProductStoreRoute } from "./types";
+import { formatMoney, paymentDisplay, paymentIncident, purchaseStages, purchaseState } from "./detail";
+import type { CartSnapshot, MissionDetail, NodeDetail, NodeDetails, NodeId, NodeSubtitles, ProductStoreRoute } from "./types";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -8,6 +9,7 @@ export interface Graph {
   setNodeSubtitles(subtitles: NodeSubtitles): void;
   setNodeDetails(details: NodeDetails): void;
   setCartSnapshot(snapshot: CartSnapshot | null): void;
+  setCartCheckout(detail: MissionDetail | null): void;
   setTopology(products: ProductStoreRoute[]): void;
   flashFeedback(): void;
   reset(): void;
@@ -118,7 +120,9 @@ export function createGraph(container: HTMLElement): Graph {
   cartUpdate.className = "topology-cart-update";
   const productList = document.createElement("div");
   productList.className = "topology-products";
-  cart.append(cartHeading, cartMetrics, cartUpdate, productList);
+  const cartCheckout = document.createElement("section");
+  cartCheckout.className = "topology-checkout";
+  cart.append(cartHeading, cartMetrics, cartUpdate, productList, cartCheckout);
   const shops = document.createElement("section");
   shops.className = "topology-shops";
   const shopsHeading = document.createElement("div");
@@ -203,6 +207,88 @@ export function createGraph(container: HTMLElement): Graph {
     cartUpdate.textContent = snapshot.latestUpdate;
   }
 
+  function setCartCheckout(detail: MissionDetail | null): void {
+    cartCheckout.replaceChildren();
+    if (!detail?.basket) return;
+
+    const summary = document.createElement("div");
+    summary.className = "topology-checkout-summary";
+    const total = document.createElement("strong");
+    total.textContent = `Total ${formatMoney(detail.basket.total, detail.basket.currency)}`;
+    const basketMeta = document.createElement("span");
+    basketMeta.textContent = [
+      detail.basket.merchant?.name ?? "Merchant pending",
+      `${detail.basket.item_count} items`,
+      detail.basket.status.replaceAll("_", " "),
+    ].join(" · ");
+    summary.append(total, basketMeta);
+
+    const purchase = purchaseState(detail);
+    const purchaseCard = document.createElement("section");
+    purchaseCard.className = "topology-purchase-state";
+    purchaseCard.dataset.tone = purchase.tone;
+    const purchaseHeading = document.createElement("h3");
+    purchaseHeading.textContent = "Purchase state";
+    const purchaseTitle = document.createElement("strong");
+    purchaseTitle.textContent = purchase.title;
+    const purchaseBody = document.createElement("p");
+    purchaseBody.textContent = purchase.body;
+    const stages = document.createElement("div");
+    stages.className = "topology-purchase-stages";
+    for (const stage of purchaseStages(detail)) {
+      const step = document.createElement("span");
+      step.dataset.state = stage.state;
+      step.textContent = stage.name;
+      stages.append(step);
+    }
+    purchaseCard.append(purchaseHeading, purchaseTitle, purchaseBody, stages);
+
+    const payments = document.createElement("section");
+    payments.className = "topology-payment-trail";
+    const paymentsHeading = document.createElement("h3");
+    paymentsHeading.textContent = "Payment trail";
+    payments.append(paymentsHeading);
+    const incident = paymentIncident(detail);
+    if (incident) {
+      const alert = document.createElement("div");
+      alert.className = "topology-payment-incident";
+      alert.dataset.tone = incident.tone;
+      const title = document.createElement("strong");
+      title.textContent = incident.title;
+      const body = document.createElement("span");
+      body.textContent = incident.body;
+      alert.append(title, body);
+      payments.append(alert);
+    }
+    if (detail.payment_attempts.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "topology-payment-empty";
+      empty.textContent = "No payment attempt has been made.";
+      payments.append(empty);
+    } else {
+      const paymentList = document.createElement("div");
+      paymentList.className = "topology-payment-list";
+      for (const payment of detail.payment_attempts.map(paymentDisplay)) {
+        const row = document.createElement("article");
+        row.className = "topology-payment-row";
+        row.dataset.tone = payment.tone;
+        const provider = document.createElement("strong");
+        provider.textContent = payment.provider;
+        const status = document.createElement("span");
+        status.className = "topology-payment-status";
+        status.textContent = payment.status;
+        const paymentMeta = document.createElement("span");
+        paymentMeta.className = "topology-payment-meta";
+        paymentMeta.textContent = payment.detail;
+        row.append(provider, status, paymentMeta);
+        paymentList.append(row);
+      }
+      payments.append(paymentList);
+    }
+
+    cartCheckout.append(summary, purchaseCard, payments);
+  }
+
   function setTopology(products: ProductStoreRoute[]): void {
     topology = products;
     productList.replaceChildren();
@@ -255,6 +341,7 @@ export function createGraph(container: HTMLElement): Graph {
     setNodeSubtitles,
     setNodeDetails,
     setCartSnapshot,
+    setCartCheckout,
     setTopology,
     flashFeedback() {
       feedback.classList.add("on");
@@ -269,6 +356,7 @@ export function createGraph(container: HTMLElement): Graph {
       setNodeSubtitles({});
       setNodeDetails({});
       setCartSnapshot(null);
+      setCartCheckout(null);
       setTopology([]);
       feedback.classList.remove("on");
     },

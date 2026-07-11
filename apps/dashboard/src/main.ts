@@ -2,7 +2,7 @@ import "./styles.css";
 
 import { fetchCatalogOffers, fetchEvents, fetchMissionDetail, fetchMissions } from "./api";
 import { displayMissionTitle } from "./copy";
-import { createDetailPanel, simulateLineItemPaymentFailure } from "./detail";
+import { replayDetail, simulateLineItemPaymentFailure } from "./detail";
 import { createGraph } from "./graph";
 import { EVENT_NODE, FEEDBACK_EVENTS, WARN_EVENTS, WARN_SEVERITIES } from "./mapping";
 import { createPortfolioFlow } from "./portfolio";
@@ -25,7 +25,6 @@ type Mode = "connecting" | "live" | "replay";
 const graph = createGraph(document.getElementById("graph")!);
 const portfolioFlow = createPortfolioFlow();
 const ticker = createTicker(document.getElementById("ticker")!);
-const detailPanel = createDetailPanel(document.getElementById("detail-panel")!);
 const missionTitleEl = document.getElementById("mission-title")!;
 const missionStatusEl = document.getElementById("mission-status")!;
 const modeBadgeEl = document.getElementById("mode-badge")!;
@@ -79,7 +78,6 @@ function resetView(): void {
   graph.reset();
   portfolioFlow.reset();
   ticker.reset();
-  detailPanel.reset();
   latestDetail = null;
   lineItemFailureSimulation = false;
   clearCheckoutSimulation();
@@ -102,7 +100,7 @@ function updateSimulationButton(): void {
   simulateLineItemButton.textContent = lineItemFailureSimulation
     ? "clear line-item failure"
     : "simulate line-item failure";
-  simulateBatchTwoButton.disabled = catalogOffers.length === 0 || !latestDetail?.basket;
+  simulateBatchTwoButton.disabled = !latestDetail?.basket?.items.length;
   simulateBatchTwoButton.dataset.active = String(checkoutPhase !== "idle");
   simulateBatchTwoButton.textContent = checkoutPhase === "idle"
     ? "simulate checkout loop"
@@ -133,7 +131,7 @@ function baseNodeDetails(detail: MissionDetail, routes: CheckoutRoute[]): NodeDe
     contract: [{
       title: `Budget ${detail.mission.budget_limit.toFixed(2)} ${detail.mission.currency}`,
       meta: `${detail.mission.current_step} of ${detail.mission.total_steps} steps`,
-      description: "Constraints and intent are locked before a basket can be purchased.",
+      description: "Constraints and intent are locked before the cart can be purchased.",
       tone: "info",
     }],
   };
@@ -168,6 +166,36 @@ function baseNodeDetails(detail: MissionDetail, routes: CheckoutRoute[]): NodeDe
   return details;
 }
 
+function checkoutPresentation(detail: MissionDetail, routes: CheckoutRoute[]): MissionDetail {
+  if (checkoutPhase === "idle" || !detail.basket) return detail;
+
+  const totalFor = (batch: 1 | 2): number => routes
+    .find((route) => route.batch === batch)
+    ?.items.reduce((sum, item) => sum + item.line_total, 0) ?? 0;
+  const firstStore = routes.find((route) => route.batch === 1)?.storeName ?? "store group 1";
+  const secondStore = routes.find((route) => route.batch === 2)?.storeName ?? "store group 2";
+  const payments: MissionDetail["payment_attempts"] = checkoutPhase === "batch1_processing"
+    ? [{ provider: `PSP_SIM / ${firstStore}`, amount: totalFor(1), currency: detail.basket.currency, status: "attempted", decline_code: null, simulated: true }]
+    : checkoutPhase === "batch1_purchased"
+      ? [{ provider: `PSP_SIM / ${firstStore}`, amount: totalFor(1), currency: detail.basket.currency, status: "authorized", decline_code: null, simulated: true }]
+      : [
+          { provider: `PSP_SIM / ${firstStore}`, amount: totalFor(1), currency: detail.basket.currency, status: "authorized", decline_code: null, simulated: true },
+          { provider: `PSP_SIM / ${secondStore}`, amount: totalFor(2), currency: detail.basket.currency, status: "declined", decline_code: "SIMULATED_BATCH_2_DECLINE", simulated: true },
+        ];
+  const status = checkoutPhase === "batch1_processing"
+    ? "checkout_in_progress"
+    : checkoutPhase === "batch1_purchased"
+      ? "batch_1_purchased"
+      : "payment_retry_required";
+
+  return {
+    ...detail,
+    basket: { ...detail.basket, status },
+    order: null,
+    payment_attempts: payments,
+  };
+}
+
 function renderWorkflow(detail: MissionDetail): void {
   const routes = buildCheckoutRoutes(detail.basket?.items ?? [], catalogOffers);
   const portfolio = portfolioFlow.update(detail, routes, checkoutPhase);
@@ -179,6 +207,7 @@ function renderWorkflow(detail: MissionDetail): void {
     recoveredFailures: detail.metrics.recovered_failures,
     latestUpdate: detail.mission.latest_update,
   });
+  graph.setCartCheckout(checkoutPresentation(detail, routes));
   graph.setTopology(portfolio.topology);
   graph.setNodeSubtitles({
     ...portfolio.subtitles,
@@ -191,7 +220,6 @@ function renderWorkflow(detail: MissionDetail): void {
 function renderDetail(detail: MissionDetail): void {
   latestDetail = detail;
   const renderedDetail = lineItemFailureSimulation ? simulateLineItemPaymentFailure(detail) : detail;
-  detailPanel.update(renderedDetail);
   renderWorkflow(renderedDetail);
   updateSimulationButton();
 }
@@ -204,7 +232,7 @@ function stopReplay(): void {
 function scheduleReplayStep(index: number): void {
   const step = REPLAY_SCRIPT[index % REPLAY_SCRIPT.length];
   if (index > 0 && index % REPLAY_SCRIPT.length === 0) resetView();
-  renderWorkflow(detailPanel.showReplay(step.type));
+  renderWorkflow(replayDetail(step.type));
   dispatch({ ...step, created_at: new Date().toISOString() });
   replayTimer = window.setTimeout(() => scheduleReplayStep(index + 1), step.delay);
 }
@@ -216,7 +244,7 @@ function enterReplay(reason: string): void {
   resetView();
   setMode("replay", reason);
   setMission(REPLAY_MISSION_TITLE, null);
-  renderWorkflow(detailPanel.showReplay("mission.created"));
+  renderWorkflow(replayDetail("mission.created"));
   scheduleReplayStep(0);
 }
 
@@ -292,7 +320,7 @@ simulateLineItemButton.addEventListener("click", () => {
 });
 
 simulateBatchTwoButton.addEventListener("click", () => {
-  if (catalogOffers.length === 0 || !latestDetail?.basket) return;
+  if (!latestDetail?.basket?.items.length) return;
   if (checkoutPhase !== "idle") {
     clearCheckoutSimulation();
     renderDetail(latestDetail);
