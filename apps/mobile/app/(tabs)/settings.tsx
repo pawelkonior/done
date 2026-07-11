@@ -6,11 +6,7 @@ import {
   Download,
   Languages,
   LockKeyhole,
-  Mic2,
-  RefreshCw,
-  RotateCcw,
   ShieldCheck,
-  Sparkles,
   Store,
   WalletCards,
 } from "lucide-react-native";
@@ -19,8 +15,7 @@ import { AppScreen } from "@/components/AppScreen";
 import { GlassCard } from "@/components/GlassCard";
 import { PageHeader } from "@/components/PageHeader";
 import { ChoiceRow, PreferenceModal } from "@/components/PreferenceModal";
-import { useMerchants, useResetDemo, useRuntimeCapabilities, useUpdateUserSettings, useUserDataExport, useUserSettings } from "@/api/hooks";
-import { API_URL } from "@/api/client";
+import { useMerchants, useUpdateUserSettings, useUserDataExport, useUserSettings } from "@/api/hooks";
 import type { UserSettingsUpdate } from "@/types/domain";
 import { ensureNotificationPermission } from "@/notifications/notifications";
 import { colors, radii, spacing, type } from "@/theme/tokens";
@@ -47,8 +42,6 @@ export default function SettingsScreen() {
   const settingsQuery = useUserSettings();
   const merchantsQuery = useMerchants();
   const update = useUpdateUserSettings();
-  const reset = useResetDemo();
-  const runtime = useRuntimeCapabilities();
   const [dialog, setDialog] = useState<SettingsDialog>(null);
   const exportQuery = useUserDataExport(dialog === "privacy");
   const [languageDraft, setLanguageDraft] = useState("");
@@ -103,24 +96,6 @@ export default function SettingsScreen() {
     toggle({ notifications_enabled: enabled });
   };
 
-  const doReset = () => {
-    Alert.alert("Reset demo?", "This removes all live missions and restores the deterministic catalog.", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Reset",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await reset.mutateAsync();
-            Alert.alert("Demo reset", "Ready for a fresh mission.");
-          } catch (error) {
-            Alert.alert("Reset failed", errorMessage(error));
-          }
-        },
-      },
-    ]);
-  };
-
   const exportText = useMemo(
     () => exportQuery.data ? JSON.stringify(exportQuery.data, null, 2) : "",
     [exportQuery.data],
@@ -140,7 +115,7 @@ export default function SettingsScreen() {
 
   return (
     <AppScreen testID="settings-screen">
-      <PageHeader title="Settings" subtitle="Choose how Done speaks, decides and keeps you informed." />
+      <PageHeader title="Settings" />
 
       {!settings ? (
         <QueryState
@@ -223,43 +198,6 @@ export default function SettingsScreen() {
             />
           </SettingsSection>
 
-          <SettingsSection title="Voice services">
-            {runtime.data ? (
-              <>
-                <RuntimeRow icon={Mic2} label="OpenAI STT" capability={runtime.data.speech_to_text} />
-                <RuntimeRow icon={Sparkles} label="OpenAI Realtime" capability={runtime.data.realtime} />
-              </>
-            ) : (
-              <View style={styles.runtimeLoading}>
-                {runtime.isLoading ? <ActivityIndicator color={colors.primaryBright} /> : <Text style={styles.runtimeError}>{runtime.error ? errorMessage(runtime.error) : "Runtime status unavailable"}</Text>}
-              </View>
-            )}
-            <Pressable onPress={() => void runtime.refetch()} disabled={runtime.isFetching} accessibilityRole="button" style={({ pressed }) => [styles.runtimeRefresh, runtime.isFetching && styles.disabled, pressed && styles.pressed]} testID="refresh-runtime">
-              {runtime.isFetching ? <ActivityIndicator size="small" color={colors.primaryBright} /> : <RefreshCw size={16} color={colors.primaryBright} />}
-              <Text style={styles.runtimeRefreshText}>{runtime.isFetching ? "Checking…" : "Refresh runtime status"}</Text>
-            </Pressable>
-          </SettingsSection>
-
-          {runtime.data?.demo_endpoints ? (
-            <GlassCard accent={colors.borderStrong} style={styles.demoCard}>
-              <View style={styles.demoIcon}><RotateCcw color={colors.primaryBright} size={24} /></View>
-              <View style={styles.demoText}>
-                <Text style={styles.demoTitle}>Demo controls</Text>
-                <Text style={styles.demoSubtitle}>Reset all missions, approvals, failures and payment attempts.</Text>
-                <Text numberOfLines={1} style={styles.endpoint}>{API_URL}</Text>
-              </View>
-              <Pressable
-                onPress={doReset}
-                disabled={reset.isPending}
-                accessibilityRole="button"
-                accessibilityState={{ disabled: reset.isPending }}
-                style={[styles.resetButton, reset.isPending && styles.disabled]}
-                testID="reset-demo-button"
-              >
-                <Text style={styles.resetText}>{reset.isPending ? "Resetting…" : "Reset"}</Text>
-              </Pressable>
-            </GlassCard>
-          ) : null}
         </>
       )}
 
@@ -449,23 +387,6 @@ function SettingsRow({
   );
 }
 
-function RuntimeRow({ icon: Icon, label, capability }: { icon: typeof Mic2; label: string; capability: { status: string; model?: string; detail?: string | null } }) {
-  const available = capability.status === "available";
-  const degraded = capability.status === "degraded";
-  const statusColor = available ? colors.success : degraded ? colors.warning : colors.error;
-  return (
-    <View style={styles.runtimeRow}>
-      <View style={styles.rowIcon}><Icon size={20} color={colors.primaryBright} /></View>
-      <View style={styles.runtimeText}>
-        <Text style={styles.rowLabel}>{label}</Text>
-        <Text numberOfLines={2} style={styles.runtimeDetail}>{capability.model || capability.detail || "No model configured"}</Text>
-      </View>
-      <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-      <Text style={[styles.runtimeStatus, { color: statusColor }]}>{capability.status}</Text>
-    </View>
-  );
-}
-
 function QueryState({ loading, error, onRetry }: { loading: boolean; error: string | null; onRetry: () => void }) {
   return (
     <GlassCard style={styles.queryState}>
@@ -488,25 +409,8 @@ const styles = StyleSheet.create({
   rowIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: "rgba(155,92,255,0.08)", alignItems: "center", justifyContent: "center" },
   rowLabel: { ...type.smallMedium, color: colors.text, flex: 1 },
   rowValue: { ...type.caption, color: colors.textSecondary, maxWidth: 145, textTransform: "capitalize" },
-  runtimeRow: { minHeight: 66, paddingHorizontal: spacing.md, flexDirection: "row", alignItems: "center", gap: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.hairline },
-  runtimeText: { flex: 1, minWidth: 0 },
-  runtimeDetail: { ...type.caption, color: colors.textMuted, marginTop: 2 },
-  runtimeStatus: { ...type.caption, textTransform: "capitalize" },
-  statusDot: { width: 7, height: 7, borderRadius: 4 },
-  runtimeLoading: { minHeight: 70, alignItems: "center", justifyContent: "center", padding: spacing.md },
-  runtimeError: { ...type.caption, color: colors.error, textAlign: "center" },
-  runtimeRefresh: { minHeight: 46, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.xs },
-  runtimeRefreshText: { ...type.smallMedium, color: colors.primaryBright },
   pressed: { opacity: 0.68 },
   disabled: { opacity: 0.48 },
-  demoCard: { padding: spacing.md, flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  demoIcon: { width: 48, height: 48, borderRadius: 24, backgroundColor: "rgba(155,92,255,0.10)", alignItems: "center", justifyContent: "center" },
-  demoText: { flex: 1, minWidth: 0 },
-  demoTitle: { ...type.bodyMedium, color: colors.text },
-  demoSubtitle: { ...type.caption, color: colors.textSecondary, marginTop: 2 },
-  endpoint: { ...type.caption, color: colors.textMuted, marginTop: 4 },
-  resetButton: { minHeight: 40, paddingHorizontal: spacing.md, borderRadius: radii.md, backgroundColor: "rgba(155,92,255,0.12)", alignItems: "center", justifyContent: "center" },
-  resetText: { ...type.smallMedium, color: colors.primaryBright },
   choiceList: { gap: spacing.xs },
   inputLabel: { ...type.caption, color: colors.textSecondary, marginBottom: spacing.xs },
   input: { minHeight: 52, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: radii.md, backgroundColor: "rgba(5,7,16,0.72)", paddingHorizontal: spacing.md, color: colors.text, ...type.body },

@@ -34,7 +34,7 @@ export function MissionCard({
             <Text numberOfLines={1} style={styles.title}>{mission.title}</Text>
             {!completed ? <StatusPill status={mission.status} /> : null}
           </View>
-          <Text numberOfLines={1} style={styles.subtitle}>{mission.subtitle}</Text>
+          {completed ? <Text numberOfLines={1} style={styles.subtitle}>{mission.subtitle}</Text> : null}
           {completed ? (
             <>
               <View style={styles.completeMeta}>
@@ -50,9 +50,6 @@ export function MissionCard({
             <>
               <View style={styles.progressRow}>
                 <ProgressBar progress={mission.progress} color={accent} />
-                <Text style={[styles.progressLabel, { color: accent }]}> 
-                  {mission.current_step} of {mission.total_steps}
-                </Text>
               </View>
               {!compact ? (
                 <View style={styles.latestRow}>
@@ -82,8 +79,7 @@ const styles = StyleSheet.create({
   titleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm },
   title: { ...type.h3, color: colors.text, flexShrink: 1 },
   subtitle: { ...type.small, color: colors.textSecondary, marginTop: 3 },
-  progressRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: spacing.sm },
-  progressLabel: { ...type.caption, minWidth: 43, textAlign: "right" },
+  progressRow: { flexDirection: "row", alignItems: "center", marginTop: spacing.sm },
   latestRow: { flexDirection: "row", gap: spacing.xs, alignItems: "center", marginTop: spacing.sm },
   latest: { ...type.caption, color: colors.textSecondary, flex: 1 },
   completeMeta: { flexDirection: "row", alignItems: "center", marginTop: spacing.xs },

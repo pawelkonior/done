@@ -1,6 +1,7 @@
 import { Platform } from "react-native";
 import { File } from "expo-file-system";
 import type {
+  ActionRequest,
   ApprovalRequest,
   Basket,
   CreateMissionResponse,
@@ -32,6 +33,10 @@ const defaultHost = Platform.OS === "android" ? "10.0.2.2" : "localhost";
 export const API_URL =
   process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, "") ?? `http://${defaultHost}:8001`;
 
+function apiAccessToken() {
+  return process.env.EXPO_PUBLIC_API_ACCESS_TOKEN?.trim();
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -42,12 +47,14 @@ export class ApiError extends Error {
 }
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const accessToken = apiAccessToken();
   const response = await fetch(`${API_URL}${path}`, {
     ...init,
     headers: {
       Accept: "application/json",
       ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
       ...init?.headers,
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
     },
   });
 
@@ -170,13 +177,15 @@ function normalizeBasket(value: unknown): Basket | null {
   if (!value) return null;
   const raw = asRecord(value);
   const merchantValue = raw.merchant;
+  const merchantRecord = asRecord(merchantValue);
   const merchant = typeof merchantValue === "string"
     ? merchantValue
-    : asString(asRecord(merchantValue).name, "Selected merchant");
+    : asString(merchantRecord.name, "Selected merchant");
   const currency = asString(raw.currency, "PLN");
   return {
     id: asString(raw.id),
     merchant,
+    merchant_id: asString(raw.merchant_id, asString(merchantRecord.id)) || undefined,
     currency,
     subtotal: asNumber(raw.subtotal),
     delivery_cost: asNumber(raw.delivery_cost),
@@ -198,9 +207,10 @@ function normalizeBasket(value: unknown): Basket | null {
   };
 }
 
-function normalizeApproval(value: unknown): ApprovalRequest | null {
+function normalizeApproval(value: unknown, bindingValue?: unknown): ApprovalRequest | null {
   if (!value) return null;
   const raw = asRecord(value);
+  const binding = asRecord(bindingValue);
   return {
     id: asString(raw.id),
     type: asString(raw.type, asString(raw.approval_type, "purchase_approval")),
@@ -211,6 +221,33 @@ function normalizeApproval(value: unknown): ApprovalRequest | null {
       return { id: asString(option.id), label: asString(option.label) };
     }),
     created_at: asString(raw.created_at, new Date().toISOString()),
+    plan_hash: asString(raw.plan_hash, asString(binding.plan_hash)) || undefined,
+    merchant_id: asString(raw.merchant_id, asString(binding.merchant_id)) || undefined,
+    amount: typeof raw.amount === "number"
+      ? asNumber(raw.amount)
+      : typeof binding.amount === "number" ? asNumber(binding.amount) : undefined,
+    currency: asString(raw.currency, asString(binding.currency)) || undefined,
+  };
+}
+
+function normalizeActionRequest(value: unknown): ActionRequest | null {
+  const raw = asRecord(value);
+  const id = asString(raw.id);
+  if (!id) return null;
+  return {
+    id,
+    type: asString(raw.type, "user_decision"),
+    reason_code: asString(raw.reason_code, "ACTION_REQUIRED"),
+    question: asString(raw.question, "Done needs one more detail."),
+    status: asString(raw.status, "pending") as ActionRequest["status"],
+    owner: asString(raw.owner, "user"),
+    options: asArray(raw.options).map((option) => {
+      const item = asRecord(option);
+      return { id: asString(item.id), label: asString(item.label) };
+    }).filter((option) => option.id && option.label),
+    context: asRecord(raw.context),
+    created_at: asString(raw.created_at, new Date().toISOString()),
+    expires_at: typeof raw.expires_at === "string" ? raw.expires_at : null,
   };
 }
 
@@ -368,10 +405,13 @@ function normalizeDetail(value: unknown): MissionDetail {
         }
       : null,
     basket: normalizeBasket(raw.basket),
-    approval: normalizeApproval(raw.approval),
+    approval: normalizeApproval(raw.approval, raw.approval_binding),
     events: asArray(raw.events).map(normalizeEvent),
     metrics: normalizeMetrics(raw.metrics),
     delivery_options: asArray(raw.delivery_options).map(normalizeDelivery),
+    action_requests: asArray(raw.action_requests)
+      .map(normalizeActionRequest)
+      .filter((item): item is ActionRequest => item !== null),
   };
 }
 
@@ -476,21 +516,54 @@ export async function selectDeliveryOption(missionId: string, input: DeliverySel
   return normalizeDetail(raw);
 }
 
-export async function cancelMission(missionId: string) {
+export async function cancelMission(missionId: string, expectedRevision: number) {
   const raw = await apiFetch<JsonRecord>(`/v1/missions/${missionId}/cancel`, {
     method: "POST",
-    body: "{}",
+    body: JSON.stringify({ expected_revision: expectedRevision }),
   });
   return normalizeDetail(raw);
 }
 
-export async function resolveApproval(approvalId: string, choice: "approve" | "review" | "cancel") {
+export async function resolveApproval(
+  approvalId: string,
+  choice: "approve" | "review" | "cancel",
+  evidence: {
+    expected_revision: number;
+    amount?: number;
+    currency?: string;
+    plan_hash?: string;
+    merchant_id?: string;
+    voice_transcript?: string;
+  },
+) {
   const raw = await apiFetch<JsonRecord>(
     `/v1/approvals/${approvalId}/resolve`,
-    { method: "POST", body: JSON.stringify({ choice }) },
+    { method: "POST", body: JSON.stringify({ choice, ...evidence }) },
   );
   const detail = normalizeDetail(raw);
   return { status: detail.mission.status, mission_id: detail.mission.id, detail };
+}
+
+export async function resolveActionRequest(
+  actionRequestId: string,
+  input: { choice: string; voice_transcript?: string; expected_revision: number },
+) {
+  const raw = await apiFetch<JsonRecord>(`/v1/action-requests/${actionRequestId}/resolve`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  return normalizeDetail(raw);
+}
+
+export async function requestHumanSupport(
+  missionId: string,
+  input: { reason?: string; expected_revision: number },
+) {
+  const raw = await apiFetch<JsonRecord>(`/v1/missions/${missionId}/support`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  return normalizeDetail(raw);
 }
 
 export async function injectFailure(missionId: string, failureType: string) {
@@ -547,9 +620,12 @@ export async function getRuntimeCapabilities(): Promise<RuntimeCapabilities> {
   return apiFetch<RuntimeCapabilities>("/v1/runtime/capabilities");
 }
 
-export async function getRealtimeClientSecret(language: string): Promise<RealtimeClientSecret> {
+export async function getRealtimeClientSecret(
+  language: string,
+  missionId?: string,
+): Promise<RealtimeClientSecret> {
   return apiFetch<RealtimeClientSecret>("/v1/realtime/client-secret", {
     method: "POST",
-    body: JSON.stringify({ language }),
+    body: JSON.stringify({ language, mission_id: missionId }),
   });
 }

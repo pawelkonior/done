@@ -18,6 +18,18 @@ def _create(client: TestClient, transcript: str) -> dict:
     return response.json()
 
 
+def _approval_payload(detail: dict) -> dict:
+    approval = detail["approval"]
+    return {
+        "choice": "approve",
+        "expected_revision": detail["mission"]["revision"],
+        "amount": approval["amount"],
+        "currency": approval["currency"],
+        "plan_hash": approval["plan_hash"],
+        "merchant_id": approval["merchant_id"],
+    }
+
+
 def test_correction_revises_same_mission_and_invalidates_approval(
     client: TestClient, transcript: str
 ) -> None:
@@ -100,6 +112,56 @@ def test_delivery_selection_changes_total_selection_and_approval(
     assert "revision changed" in stale.json()["message"]
 
 
+def test_cross_merchant_delivery_requires_full_replan(
+    client: TestClient, transcript: str
+) -> None:
+    created = _create(client, transcript)
+    mission_id = created["mission"]["id"]
+    original_delivery_id = created["basket"]["delivery_option_id"]
+    basket_merchant_id = created["basket"]["merchant"]["id"]
+    assert {option["merchant_id"] for option in created["delivery_options"]} == {
+        basket_merchant_id
+    }
+
+    rogue_option_id = "del-cross-merchant-test"
+    with client.app.state.database.transaction() as connection:
+        other_merchant_id = connection.execute(
+            "SELECT id FROM merchants WHERE id != ? ORDER BY id LIMIT 1",
+            (basket_merchant_id,),
+        ).fetchone()["id"]
+        selected = next(
+            option for option in created["delivery_options"] if option["selected"]
+        )
+        connection.execute(
+            """
+            INSERT INTO delivery_options
+                (id, mission_id, merchant_id, label, delivery_at, cost_cents,
+                 confidence, selected, available)
+            VALUES (?, ?, ?, 'Invalid cross-merchant slot', ?, 100, 0.9, 0, 1)
+            """,
+            (
+                rogue_option_id,
+                mission_id,
+                other_merchant_id,
+                selected["delivery_at"],
+            ),
+        )
+
+    response = client.put(
+        f"/v1/missions/{mission_id}/delivery-option",
+        json={
+            "delivery_option_id": rogue_option_id,
+            "expected_revision": created["mission"]["revision"],
+        },
+    )
+    assert response.status_code == 409
+    assert "full basket re-plan" in response.json()["message"]
+
+    unchanged = client.get(f"/v1/missions/{mission_id}").json()
+    assert unchanged["basket"]["delivery_option_id"] == original_delivery_id
+    assert unchanged["approval"]["id"] == created["approval"]["id"]
+
+
 def test_stale_or_conflicting_revision_returns_409(
     client: TestClient, transcript: str
 ) -> None:
@@ -137,11 +199,13 @@ def test_list_filters_search_dates_sort_and_requires_action(
 ) -> None:
     first = _create(
         client,
-        "Jutro przyjęcie dla 10 dzieci do 300 PLN bez orzechów, dostawa przed 16:00.",
+        "Jutro przyjęcie dla 10 dzieci: jedzenie i dekoracje do 300 PLN "
+        "bez orzechów, dostawa przed 16:00.",
     )
     second = _create(
         client,
-        "Jutro przyjęcie dla 12 dzieci do 320 PLN bez orzechów, dostawa przed 16:00.",
+        "Jutro przyjęcie dla 12 dzieci: jedzenie i dekoracje do 320 PLN "
+        "bez orzechów, dostawa przed 16:00.",
     )
     first_id = first["mission"]["id"]
     second_id = second["mission"]["id"]
@@ -156,7 +220,7 @@ def test_list_filters_search_dates_sort_and_requires_action(
             ("2026-01-02T10:00:00+00:00", "2026-01-02T10:00:00+00:00", second_id),
         )
 
-    searched = client.get("/v1/missions", params={"q": "12 children"})
+    searched = client.get("/v1/missions", params={"q": "12 people"})
     assert searched.status_code == 200
     assert [item["id"] for item in searched.json()["missions"]] == [second_id]
 
@@ -174,9 +238,14 @@ def test_list_filters_search_dates_sort_and_requires_action(
     assert [item["id"] for item in oldest["missions"]] == [first_id, second_id]
     assert [item["id"] for item in newest["missions"]] == [second_id, first_id]
 
-    completed = client.post(
+    changed_plan = client.post(
         f"/v1/approvals/{first['approval']['id']}/resolve",
-        json={"choice": "approve"},
+        json=_approval_payload(first),
+    )
+    assert changed_plan.status_code == 200
+    completed = client.post(
+        f"/v1/approvals/{changed_plan.json()['approval']['id']}/resolve",
+        json=_approval_payload(changed_plan.json()),
     )
     assert completed.status_code == 200
     today = datetime.now(UTC).date()
