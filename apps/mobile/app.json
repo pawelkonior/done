@@ -1,0 +1,79 @@
+{
+  "expo": {
+    "name": "Done",
+    "slug": "done-commerce-agent",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "scheme": "done",
+    "icon": "./assets/icon.png",
+    "plugins": [
+      "expo-router",
+      "expo-dev-client",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Allow Done to hear your mission."
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#9B5CFF",
+          "defaultChannel": "mission-updates"
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#070914",
+          "image": "./assets/icon.png",
+          "imageWidth": 220,
+          "resizeMode": "contain"
+        }
+      ]
+    ],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "app.done.agent",
+      "buildNumber": "1",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSMicrophoneUsageDescription": "Allow Done to hear and transcribe your mission.",
+        "NSLocalNetworkUsageDescription": "Allow Done to connect to your local mission server and Ollama runtime.",
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        }
+      }
+    },
+    "android": {
+      "package": "app.done.agent",
+      "versionCode": 1,
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.CHANGE_NETWORK_STATE"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "name": "Done — Say it. Done."
+    },
+    "experiments": {
+      "typedRoutes": true
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    }
+  }
+}
