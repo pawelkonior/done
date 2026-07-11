@@ -14,7 +14,7 @@ niczego nie zapisuje i nie wymaga zmian w API.
 npm run dashboard        # http://localhost:8090
 ```
 
-Dashboard oczekuje API pod `http://localhost:8001` (nadpisanie:
+Dashboard oczekuje API pod `http://127.0.0.1:8001` (nadpisanie:
 `VITE_API_URL`). Port `8090` jest domyślnie dopuszczony w CORS API.
 
 ## Tryby

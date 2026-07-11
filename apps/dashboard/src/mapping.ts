@@ -40,6 +40,7 @@ export const EVENT_NODE: Record<string, NodeId> = {
   "portfolio.waiting": "model",
   "portfolio.infeasible": "model",
   "portfolio.invalid": "model",
+  "portfolio.catalog_mismatch": "model",
   "portfolio.shadow_audit": "model",
   "catalog.plan_not_found": "model",
   "timing.orange_mode": "model",
@@ -92,6 +93,7 @@ export const FEEDBACK_EVENTS = new Set([
 export const WARN_EVENTS = new Set([
   "portfolio.infeasible",
   "portfolio.invalid",
+  "portfolio.catalog_mismatch",
   "payment.declined",
   "mission.failed",
   "approval.expired",
