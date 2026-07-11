@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "done-local-stt"
+version = "0.1.0"
+description = "Isolated local Whisper transcription sidecar for Done"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "pydantic>=2.10,<3",
+  "python-multipart>=0.0.20,<1",
+  "uvicorn[standard]>=0.34,<1",
+]
+
+[project.optional-dependencies]
+inference = [
+  "openai-whisper==20240930",
+]
+dev = [
+  "httpx>=0.27,<1",
+  "pytest>=8,<10",
+  "ruff>=0.15,<1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.setuptools.packages.find]
+include = ["stt_service*"]
