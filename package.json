@@ -3,12 +3,14 @@
   "private": true,
   "version": "1.0.0",
   "workspaces": [
-    "apps/mobile"
+    "apps/mobile",
+    "apps/dashboard"
   ],
   "scripts": {
     "setup": "npm install && npm run setup:api",
     "setup:api": "uv sync --project apps/api --python 3.13 --extra dev",
-    "dev": "concurrently --kill-others --names API,MOBILE --prefix-colors magenta,blue \"npm run api\" \"npm run web\"",
+    "dev": "concurrently --kill-others --names API,MOBILE,DASH --prefix-colors magenta,blue,green \"npm run api\" \"npm run web\" \"npm run dashboard\"",
+    "dashboard": "npm --workspace apps/dashboard run dev",
     "api": "cd apps/api && DONE_STT_ENABLED=true uv run uvicorn app.main:app --env-file ../../.env --reload --port 8001",
     "api:production": "cd apps/api && DONE_STT_ENABLED=true DONE_DEMO_FAILURES_ENABLED=false DONE_DEMO_ENDPOINTS_ENABLED=false uv run uvicorn app.main:app --env-file ../../.env --host 127.0.0.1 --port 8001 --workers 1",
     "mobile": "npm --workspace apps/mobile run start",

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Done — Live Loop</title>
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="brand">DONE<span class="brand-dot">●</span><span class="brand-sub">live loop</span></div>
+        <div class="mission" id="mission-title">czekam na misję…</div>
+        <div class="right">
+          <span class="status" id="mission-status" hidden></span>
+          <span class="badge" id="mode-badge" data-mode="connecting">łączenie…</span>
+          <span class="clock" id="clock"></span>
+        </div>
+      </header>
+      <main class="stage">
+        <div id="graph" class="graph" role="img" aria-label="Graf pętli decyzyjnej Done"></div>
+      </main>
+      <footer class="ticker" id="ticker" aria-live="polite"></footer>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
