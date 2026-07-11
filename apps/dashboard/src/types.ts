@@ -33,6 +33,15 @@ export interface ProductStoreRoute {
   simulated: boolean;
 }
 
+export interface CartSnapshot {
+  status: string;
+  progress: number;
+  budgetLimit: number;
+  currency: string;
+  recoveredFailures: number;
+  latestUpdate: string;
+}
+
 export interface LoopEvent {
   type: string;
   title: string;

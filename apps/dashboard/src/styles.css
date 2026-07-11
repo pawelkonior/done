@@ -402,6 +402,17 @@ html, body {
 .topology-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 9px; }
 .topology-heading strong { color: var(--ink); font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; }
 .topology-heading span { color: var(--ink-faint); font-size: 10px; }
+.topology-cart-metrics { display: flex; flex-wrap: wrap; gap: 5px; margin: -2px 0 7px; }
+.topology-cart-metrics span {
+  padding: 4px 6px;
+  color: var(--ink-dim);
+  font-family: var(--mono);
+  font-size: 9px;
+  background: rgba(167, 139, 250, 0.08);
+  border: 1px solid rgba(167, 139, 250, 0.26);
+  border-radius: 4px;
+}
+.topology-cart-update { margin: 0 0 9px; color: var(--ink-faint); font-size: 10px; line-height: 1.35; }
 
 .topology-products { display: grid; gap: 6px; }
 .topology-product {

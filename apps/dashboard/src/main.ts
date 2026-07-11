@@ -171,6 +171,14 @@ function baseNodeDetails(detail: MissionDetail, routes: CheckoutRoute[]): NodeDe
 function renderWorkflow(detail: MissionDetail): void {
   const routes = buildCheckoutRoutes(detail.basket?.items ?? [], catalogOffers);
   const portfolio = portfolioFlow.update(detail, routes, checkoutPhase);
+  graph.setCartSnapshot({
+    status: detail.mission.status,
+    progress: detail.mission.progress,
+    budgetLimit: detail.mission.budget_limit,
+    currency: detail.mission.currency,
+    recoveredFailures: detail.metrics.recovered_failures,
+    latestUpdate: detail.mission.latest_update,
+  });
   graph.setTopology(portfolio.topology);
   graph.setNodeSubtitles({
     ...portfolio.subtitles,

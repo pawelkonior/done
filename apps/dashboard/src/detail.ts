@@ -72,16 +72,6 @@ function section(title: string): { root: HTMLElement; body: HTMLElement } {
   return { root, body };
 }
 
-function metric(labelText: string, value: string): HTMLElement {
-  const root = element("div", "metric");
-  const name = element("span", "metric-label");
-  name.textContent = labelText;
-  const content = element("strong", "metric-value");
-  content.textContent = value;
-  root.append(name, content);
-  return root;
-}
-
 function note(text: string): HTMLElement {
   const root = element("p", "detail-note");
   root.textContent = text;
@@ -233,15 +223,6 @@ export function simulateLineItemPaymentFailure(detail: MissionDetail): MissionDe
 function render(container: HTMLElement, detail: MissionDetail): void {
   container.replaceChildren();
 
-  const snapshot = section("Mission snapshot");
-  const metricGrid = element("div", "metric-grid");
-  metricGrid.append(
-    metric("Progress", `${Math.round(detail.mission.progress * 100)}%`),
-    metric("Budget", money(detail.mission.budget_limit, detail.mission.currency)),
-    metric("Recovered", String(detail.metrics.recovered_failures)),
-  );
-  snapshot.body.append(metricGrid, note(detail.mission.latest_update));
-
   const basketSection = section("Basket");
   if (!detail.basket) {
     basketSection.body.append(note("No basket yet. Items will appear here as soon as the plan is created."));
@@ -302,7 +283,7 @@ function render(container: HTMLElement, detail: MissionDetail): void {
     payments.body.append(list);
   }
 
-  container.append(snapshot.root, basketSection.root, purchase.root, payments.root);
+  container.append(basketSection.root, purchase.root, payments.root);
 }
 
 function replayDetail(eventType: string): MissionDetail {

@@ -1,5 +1,5 @@
 import { NODES } from "./mapping";
-import type { NodeDetail, NodeDetails, NodeId, NodeSubtitles, ProductStoreRoute } from "./types";
+import type { CartSnapshot, NodeDetail, NodeDetails, NodeId, NodeSubtitles, ProductStoreRoute } from "./types";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -7,6 +7,7 @@ export interface Graph {
   setActive(node: NodeId, warn: boolean): void;
   setNodeSubtitles(subtitles: NodeSubtitles): void;
   setNodeDetails(details: NodeDetails): void;
+  setCartSnapshot(snapshot: CartSnapshot | null): void;
   setTopology(products: ProductStoreRoute[]): void;
   flashFeedback(): void;
   reset(): void;
@@ -111,9 +112,13 @@ export function createGraph(container: HTMLElement): Graph {
   const cartHeading = document.createElement("div");
   cartHeading.className = "topology-heading";
   cartHeading.innerHTML = "<strong>Cart products</strong><span>Store-connected purchase routes</span>";
+  const cartMetrics = document.createElement("div");
+  cartMetrics.className = "topology-cart-metrics";
+  const cartUpdate = document.createElement("p");
+  cartUpdate.className = "topology-cart-update";
   const productList = document.createElement("div");
   productList.className = "topology-products";
-  cart.append(cartHeading, productList);
+  cart.append(cartHeading, cartMetrics, cartUpdate, productList);
   const shops = document.createElement("section");
   shops.className = "topology-shops";
   const shopsHeading = document.createElement("div");
@@ -181,6 +186,23 @@ export function createGraph(container: HTMLElement): Graph {
     }
   }
 
+  function setCartSnapshot(snapshot: CartSnapshot | null): void {
+    cartMetrics.replaceChildren();
+    cartUpdate.textContent = "";
+    if (!snapshot) return;
+    for (const value of [
+      `Mission: ${snapshot.status.replaceAll("_", " ")}`,
+      `Progress: ${Math.round(snapshot.progress * 100)}%`,
+      `Budget: ${snapshot.budgetLimit.toFixed(2)} ${snapshot.currency}`,
+      `Recovered: ${snapshot.recoveredFailures}`,
+    ]) {
+      const metric = document.createElement("span");
+      metric.textContent = value;
+      cartMetrics.append(metric);
+    }
+    cartUpdate.textContent = snapshot.latestUpdate;
+  }
+
   function setTopology(products: ProductStoreRoute[]): void {
     topology = products;
     productList.replaceChildren();
@@ -232,6 +254,7 @@ export function createGraph(container: HTMLElement): Graph {
     },
     setNodeSubtitles,
     setNodeDetails,
+    setCartSnapshot,
     setTopology,
     flashFeedback() {
       feedback.classList.add("on");
@@ -245,6 +268,7 @@ export function createGraph(container: HTMLElement): Graph {
       }
       setNodeSubtitles({});
       setNodeDetails({});
+      setCartSnapshot(null);
       setTopology([]);
       feedback.classList.remove("on");
     },
