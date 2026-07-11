@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TEXT NOT NULL
 );
 
--- Profile-specific data is kept outside the legacy users table so this is an
+-- Profile-specific data is kept outside the base users table so this is an
 -- additive migration for databases created by earlier demo versions.
 CREATE TABLE IF NOT EXISTS user_profiles (
     user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,

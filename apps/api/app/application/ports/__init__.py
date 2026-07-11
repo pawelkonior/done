@@ -1,34 +1,21 @@
 """Ports implemented by infrastructure adapters."""
 
 from .ai import (
-    AIChatResponse,
-    AIHealth,
-    AIMessage,
-    AIResult,
-    AITool,
-    AIToolCall,
     AudioPayload,
-    MissionIntentDraft,
     SpeechToTextPort,
     STTHealth,
-    StructuredAIPort,
     TranscriptionResult,
 )
+from .mission import MissionWorkflowPort
+from .realtime import RealtimeClientSecret, RealtimeHealth, RealtimeSessionPort
 
 __all__ = [
-    "AIChatResponse",
-    "AIHealth",
-    "AIMessage",
-    "AIResult",
-    "AITool",
-    "AIToolCall",
     "AudioPayload",
-    "MissionIntentDraft",
+    "MissionWorkflowPort",
+    "RealtimeClientSecret",
+    "RealtimeHealth",
+    "RealtimeSessionPort",
     "SpeechToTextPort",
     "STTHealth",
-    "StructuredAIPort",
     "TranscriptionResult",
 ]
-from .mission import MissionWorkflowPort
-
-__all__ = ["MissionWorkflowPort"]

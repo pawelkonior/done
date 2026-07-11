@@ -119,10 +119,9 @@ class MissionWorkflow:
     ) -> dict[str, Any]:
         """Build the deterministic, safety-critical part of a mission contract.
 
-        The application layer may enrich descriptive fields with a language
-        model, but budget, participants, deadlines and hard constraints always
-        originate here.  Keeping this operation public avoids adapters reaching
-        into private workflow implementation details.
+        Budget, participants, deadlines, descriptive fields and hard
+        constraints all originate here. Keeping this operation public avoids
+        adapters reaching into private workflow implementation details.
         """
 
         return self._interpret(transcript, locale, timezone)
@@ -204,13 +203,6 @@ class MissionWorkflow:
                     "goal": "prepare_birthday_party",
                     "confidence": interpreted["confidence"],
                     "missing_information": [],
-                    "inference_provider": interpreted.get(
-                        "inference_provider", "deterministic"
-                    ),
-                    "inference_model": interpreted.get("inference_model"),
-                    "inference_fallback_reason": interpreted.get(
-                        "inference_fallback_reason"
-                    ),
                 },
             )
             connection.execute(

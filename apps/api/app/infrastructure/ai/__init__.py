@@ -1,6 +1,6 @@
-"""Local AI provider adapters."""
+"""Server-side OpenAI voice adapters."""
 
-from .ollama import OllamaAdapter, deterministic_mission_fallback
-from .whisper import WhisperSidecarAdapter
+from .openai_realtime import OpenAIRealtimeAdapter
+from .openai_transcription import OpenAITranscriptionAdapter
 
-__all__ = ["OllamaAdapter", "WhisperSidecarAdapter", "deterministic_mission_fallback"]
+__all__ = ["OpenAIRealtimeAdapter", "OpenAITranscriptionAdapter"]

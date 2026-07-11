@@ -75,7 +75,7 @@ zagnieżdżony `detail`:
 
 Alias niewidoczny w OpenAPI: `GET /v1/health`.
 
-Sprawdza połączenie SQLite i liczbę produktów. Nie odpytuje Ollama, STT ani OpenAI.
+Sprawdza połączenie SQLite i liczbę produktów. Nie odpytuje opcjonalnych usług OpenAI.
 
 ```json
 {
@@ -91,16 +91,11 @@ Status: `200` albo błąd serwera, jeżeli SQLite jest niedostępne.
 
 ### `GET /v1/runtime/capabilities`
 
-Zwraca konfigurację i health opcjonalnych adapterów. Endpoint zwraca `200`
-również wtedy, gdy adapter raportuje `unavailable`.
+Zwraca konfigurację i health opcjonalnych adapterów głosowych OpenAI. Endpoint
+zwraca `200` również wtedy, gdy adapter raportuje `unavailable`.
 
 ```json
 {
-  "ai": {
-    "status": "disabled",
-    "provider": "ollama",
-    "detail": "Set DONE_AI_ENABLED=true to enable local inference."
-  },
   "speech_to_text": {
     "status": "disabled",
     "detail": "Set DONE_STT_ENABLED=true to enable OpenAI speech recognition."
@@ -116,9 +111,10 @@ również wtedy, gdy adapter raportuje `unavailable`.
 }
 ```
 
-Przy włączonym Ollama sekcja AI może dodatkowo zawierać `version`, `model`,
-`model_available`, `model_loaded` i `detail`. Sekcja STT zawiera `model`, status
-dostępności OpenAI i bezpieczny `detail`.
+Sekcja `speech_to_text` zawiera model, status dostępności OpenAI i bezpieczny
+`detail`. Sekcja `realtime` raportuje analogicznie stan sesji Live. Endpoint nie
+zwraca sekcji ogólnego AI, ponieważ tekstowe misje są interpretowane
+deterministycznie i nie korzystają z zewnętrznego modelu.
 
 ### `POST /v1/realtime/client-secret`
 
@@ -205,9 +201,7 @@ Odpowiedź `201` to `MissionDetail` z dodatkowym polem:
     "text": "...",
     "language": "pl",
     "duration_ms": 1585,
-    "audio_duration_seconds": null,
-    "model": "gpt-4o-transcribe",
-    "segments": 0
+    "model": "gpt-4o-transcribe"
   }
 }
 ```

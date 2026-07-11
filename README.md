@@ -25,15 +25,15 @@ ukończona misja + transparentny log i metryki
 - Expo + React Native + Expo Router, działające na webie i przygotowane do iOS/Android.
 - Pięć zakładek: Now, Missions, Completed, Settings i Profile.
 - Interfejs odtworzony na podstawie screenów z `assets/`: ciemny motyw, neonowe akcenty, voice orb, karty, timeline, koszyk, opcje dostawy i ekran wyniku.
-- Rozmowa głosowa ChatGPT Live przez WebRTC, `gpt-realtime-1.5`, głos `marin`, live transcript i function calling do bezpiecznego use case'u misji.
-- Prawdziwe nagrywanie po długim przytrzymaniu mikrofonu przez `expo-audio` oraz lokalna transkrypcja Whisper jako niezależny fallback.
-- Ollama `qwen2.5:7b` wzbogaca opis misji; budżet, termin, uczestnicy, alergeny i approval pozostają deterministyczne.
+- Rozmowa głosowa przez OpenAI Realtime i WebRTC, `gpt-realtime-2`, głos `marin`, live transcript i function calling do bezpiecznego use case'u misji.
+- Prawdziwe nagrywanie po długim przytrzymaniu mikrofonu przez `expo-audio`; API wysyła audio bezpośrednio do OpenAI Transcription z modelem `gpt-4o-transcribe`.
+- Deterministyczny interpreter tworzy kontrakt misji, budżet, termin, uczestników i twarde ograniczenia bez zależności od modelu językowego.
 - FastAPI + trwałe SQLite, 14 produktów, 3 merchantów, kontrakty, eventy, koszyki, akceptacje, płatności, zamówienia i awarie.
 - Obowiązkowa akceptacja przed symulowanym zakupem.
 - Dwie automatyczne naprawy zachowujące budżet, termin i ograniczenie `nut-free`.
 - Polling stanu z API, lokalne powiadomienia, reset demo, CORS, idempotentna akceptacja i idempotentne próby płatności.
 - Clean Architecture i DDD: domain, application ports/use cases, infrastructure adapters i composition root.
-- 45 testów API, 15 testów mobilnych, 2 testy STT, TypeScript strict, Expo Doctor 20/20, eksport webowy i natywna kompilacja Xcode.
+- Testy API i aplikacji mobilnej, TypeScript strict, Expo Doctor, eksport webowy i natywna kompilacja Xcode.
 
 ## Szybki start
 
@@ -41,7 +41,7 @@ Wymagania: Node 20+, Python 3.13 oraz `uv`.
 
 ```bash
 cp .env.example .env
-# wpisz OPENAI_API_KEY wyłącznie w lokalnym .env, jeżeli używasz ChatGPT Live
+# wpisz OPENAI_API_KEY wyłącznie w lokalnym .env, jeżeli używasz Realtime lub transkrypcji audio
 npm run setup
 npm run dev
 ```
@@ -62,7 +62,7 @@ EXPO_PUBLIC_API_URL=http://localhost:8010 npm run web
 
 ## Scenariusz demo
 
-1. Na ekranie `Now` dotknij voice orb, aby rozpocząć ChatGPT Live; przytrzymaj go, aby użyć lokalnego Whispera, albo wybierz formularz tekstowy.
+1. Na ekranie `Now` dotknij voice orb, aby rozpocząć sesję OpenAI Realtime; przytrzymaj go, aby nagrać komendę wysyłaną przez API do OpenAI Transcription, albo wybierz formularz tekstowy.
 2. Powiedz przygotowaną komendę urodzinową. Live dopyta o brakujące dane i przekaże kompletną misję do deterministycznej walidacji.
 3. Na ekranie szczegółów sprawdź kontrakt, dostawę i koszyk.
 4. Wybierz „Approve purchase”.
@@ -95,8 +95,7 @@ docker compose up --build api
 
 ```text
 apps/mobile   Expo / React Native / WebRTC / Notifications / TanStack Query
-apps/api      FastAPI / DDD / application ports / SQLite / bezpieczne adaptery AI
-apps/stt      prywatny sidecar Whisper / ffmpeg
+apps/api      FastAPI / DDD / deterministyczny workflow / SQLite / OpenAI voice adapters
 assets        logo, referencje UI i pełny execution plan
 ```
 

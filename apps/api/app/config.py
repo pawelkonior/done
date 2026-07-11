@@ -1,9 +1,4 @@
-"""Runtime configuration for optional AI services.
-
-The deterministic workflow does not depend on these settings.  They are kept
-in a separate module so local Ollama and OpenAI speech services can be enabled
-without coupling the core application to a particular inference runtime.
-"""
+"""Runtime configuration for server-side OpenAI voice services."""
 
 from __future__ import annotations
 
@@ -57,83 +52,6 @@ def _http_url(name: str, value: str) -> str:
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         raise ValueError(f"{name} must be an absolute HTTP(S) URL")
     return normalized
-
-
-@dataclass(frozen=True, slots=True)
-class AISettings:
-    """Configuration for the optional local Ollama and legacy STT adapters."""
-
-    ollama_base_url: str = "http://127.0.0.1:11434"
-    ollama_model: str = "qwen2.5:7b"
-    ollama_connect_timeout_seconds: float = 2.0
-    ollama_request_timeout_seconds: float = 60.0
-    ollama_max_concurrency: int = 1
-    ollama_num_ctx: int = 4_096
-    ollama_num_predict: int = 256
-    ollama_temperature: float = 0.0
-    ollama_seed: int = 42
-    ollama_keep_alive: str = "15m"
-    ollama_max_tool_rounds: int = 4
-
-    whisper_base_url: str = "http://127.0.0.1:8002"
-    whisper_model: str = "turbo"
-    whisper_connect_timeout_seconds: float = 2.0
-    whisper_request_timeout_seconds: float = 120.0
-    whisper_max_concurrency: int = 1
-    whisper_max_upload_bytes: int = 15 * 1024 * 1024
-    whisper_default_language: str = "pl"
-
-    def __post_init__(self) -> None:
-        object.__setattr__(
-            self,
-            "ollama_base_url",
-            _http_url("DONE_OLLAMA_BASE_URL", self.ollama_base_url),
-        )
-        object.__setattr__(
-            self,
-            "whisper_base_url",
-            _http_url("DONE_WHISPER_BASE_URL", self.whisper_base_url),
-        )
-        if not self.ollama_model.strip():
-            raise ValueError("DONE_OLLAMA_MODEL cannot be empty")
-        if not self.ollama_keep_alive.strip():
-            raise ValueError("DONE_OLLAMA_KEEP_ALIVE cannot be empty")
-        if not self.whisper_default_language.strip():
-            raise ValueError("DONE_WHISPER_DEFAULT_LANGUAGE cannot be empty")
-        if not self.whisper_model.strip():
-            raise ValueError("DONE_WHISPER_MODEL cannot be empty")
-
-    @classmethod
-    def from_env(cls) -> "AISettings":
-        return cls(
-            ollama_base_url=os.getenv("DONE_OLLAMA_BASE_URL", "http://127.0.0.1:11434"),
-            ollama_model=os.getenv("DONE_OLLAMA_MODEL", "qwen2.5:7b"),
-            ollama_connect_timeout_seconds=_env_float("DONE_OLLAMA_CONNECT_TIMEOUT_SECONDS", 2.0),
-            ollama_request_timeout_seconds=_env_float("DONE_OLLAMA_REQUEST_TIMEOUT_SECONDS", 60.0),
-            ollama_max_concurrency=_env_int("DONE_OLLAMA_MAX_CONCURRENCY", 1),
-            ollama_num_ctx=_env_int("DONE_OLLAMA_NUM_CTX", 4_096),
-            ollama_num_predict=_env_int("DONE_OLLAMA_NUM_PREDICT", 256),
-            ollama_temperature=_env_float("DONE_OLLAMA_TEMPERATURE", 0.0),
-            ollama_seed=_env_int("DONE_OLLAMA_SEED", 42, minimum=0),
-            ollama_keep_alive=os.getenv("DONE_OLLAMA_KEEP_ALIVE", "15m"),
-            ollama_max_tool_rounds=_env_int("DONE_OLLAMA_MAX_TOOL_ROUNDS", 4),
-            whisper_base_url=os.getenv("DONE_WHISPER_BASE_URL", "http://127.0.0.1:8002"),
-            whisper_model=os.getenv("DONE_WHISPER_MODEL", "turbo"),
-            whisper_connect_timeout_seconds=_env_float("DONE_WHISPER_CONNECT_TIMEOUT_SECONDS", 2.0),
-            whisper_request_timeout_seconds=_env_float(
-                "DONE_WHISPER_REQUEST_TIMEOUT_SECONDS", 120.0
-            ),
-            whisper_max_concurrency=_env_int("DONE_WHISPER_MAX_CONCURRENCY", 1),
-            whisper_max_upload_bytes=_env_int("DONE_WHISPER_MAX_UPLOAD_BYTES", 15 * 1024 * 1024),
-            whisper_default_language=os.getenv("DONE_WHISPER_DEFAULT_LANGUAGE", "pl"),
-        )
-
-
-@lru_cache(maxsize=1)
-def get_ai_settings() -> AISettings:
-    """Return one immutable environment snapshot per API process."""
-
-    return AISettings.from_env()
 
 
 @dataclass(frozen=True, slots=True)

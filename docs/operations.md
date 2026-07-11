@@ -2,10 +2,10 @@
 
 ## Zakres
 
-Ten runbook opisuje aktualny kod. Done działa z API, SQLite, opcjonalnym lokalnym
-Ollama oraz serwerowymi usługami OpenAI dla STT i Realtime. Określenie
+Ten runbook opisuje aktualny kod. Done działa z API, SQLite oraz opcjonalnymi
+serwerowymi usługami OpenAI dla transkrypcji audio i Realtime. Określenie
 **production-like** oznacza tutaj konfigurację procesu, trwałą bazę, wyłączone
-mechanizmy demo i prywatne zależności inference. Nie oznacza gotowości do
+mechanizmy demo i sekrety przechowywane po stronie serwera. Nie oznacza gotowości do
 produkcyjnej sprzedaży: catalog, inventory, delivery, payment i order nadal są
 symulatorem, a aplikacja nie ma authentication, TLS ani tenant isolation.
 
@@ -13,7 +13,6 @@ symulatorem, a aplikacja nie ma authentication, TLS ani tenant isolation.
 
 - Node.js 20 lub nowszy i npm;
 - Python 3.13 oraz `uv`;
-- Ollama na porcie `11434`, jeżeli `DONE_AI_ENABLED=true`;
 - standardowy `OPENAI_API_KEY` tylko po stronie API, jeżeli
   `DONE_STT_ENABLED=true` lub `DONE_REALTIME_ENABLED=true`.
 
@@ -36,26 +35,28 @@ Uruchamiane są równolegle:
 - API na `http://127.0.0.1:8001`;
 - Expo web, zwykle na `http://localhost:8081`.
 
-Skrypt `npm run api` włącza AI i STT. Brak Ollama nie zatrzymuje tekstowego
-use-case'u, ponieważ adapter przechodzi na deterministyczny fallback. Brak
-połączenia z OpenAI blokuje prawdziwe audio multipart i Live, ale nie endpoint
-tekstowy ani JSON compatibility mode endpointu voice.
+Skrypt `npm run api` włącza serwerową transkrypcję OpenAI. Realtime jest
+kontrolowany przez `DONE_REALTIME_ENABLED` w środowisku. Brak połączenia z OpenAI
+blokuje prawdziwe audio multipart i Live, ale nie endpoint tekstowy ani JSON
+compatibility mode endpointu voice. Interpretacja tekstu jest zawsze lokalna i
+deterministyczna.
 Rootowy `.env` jest ładowany przez skrypt API. Nie używaj prefiksu
 `EXPO_PUBLIC_` dla sekretów; wartości z tym prefiksem trafiają do bundla.
 
-Minimalny backend bez lokalnych modeli:
+Minimalny backend bez opcjonalnych usług głosowych OpenAI:
 
 ```bash
 cd apps/api
-DONE_AI_ENABLED=false \
 DONE_STT_ENABLED=false \
+DONE_REALTIME_ENABLED=false \
 uv run uvicorn app.main:app --reload --port 8001
 ```
 
 ## Tryb production-like
 
-Hostowy skrypt ustawia jeden worker, włącza Ollama i STT oraz wyłącza automatyczne
-awarie i endpointy demo:
+Hostowy skrypt ustawia jeden worker, włącza transkrypcję OpenAI oraz wyłącza
+automatyczne awarie i endpointy demo. Realtime pozostaje sterowany przez
+`DONE_REALTIME_ENABLED`:
 
 ```bash
 DONE_DB_PATH=/var/lib/done/done.sqlite3 \
@@ -64,19 +65,18 @@ npm run api:production
 ```
 
 Proces powinien działać za reverse proxy zapewniającym TLS, limity requestów i
-kontrolę dostępu. Ollama należy wystawić wyłącznie w sieci prywatnej/loopback.
-Utrzymuj jeden proces zapisujący API: blokada zapisu w kodzie
+kontrolę dostępu. Utrzymuj jeden proces zapisujący API: blokada zapisu w kodzie
 jest process-local, a SQLite nie zastępuje koordynacji wielu instancji.
 
-Jeżeli inference ma pozostać wyłączone, użyj bezpośredniego polecenia zamiast
-`npm run api:production`:
+Jeżeli zewnętrzne usługi głosowe mają pozostać wyłączone, użyj bezpośredniego
+polecenia zamiast `npm run api:production`:
 
 ```bash
 cd apps/api
 DONE_DB_PATH=/var/lib/done/done.sqlite3 \
 DONE_CORS_ORIGINS=https://app.example.com \
-DONE_AI_ENABLED=false \
 DONE_STT_ENABLED=false \
+DONE_REALTIME_ENABLED=false \
 DONE_DEMO_FAILURES_ENABLED=false \
 DONE_DEMO_ENDPOINTS_ENABLED=false \
 uv run uvicorn app.main:app --host 127.0.0.1 --port 8001 --workers 1
@@ -85,8 +85,8 @@ uv run uvicorn app.main:app --host 127.0.0.1 --port 8001 --workers 1
 ### Docker Compose
 
 Aktualny `docker-compose.yml` uruchamia API i montuje SQLite w volume
-`done_data`. Ollama nie jest częścią Compose; API łączy się z nim na hoście
-przez `host.docker.internal`, a STT i Realtime korzystają z OpenAI.
+`done_data`. Transkrypcja i Realtime łączą się bezpośrednio z OpenAI, jeżeli ich
+flagi są włączone i proces otrzymał `OPENAI_API_KEY`.
 
 ```bash
 DONE_DEMO_FAILURES_ENABLED=false \
@@ -122,32 +122,11 @@ aby błąd backendu nie był maskowany danymi demonstracyjnymi.
 | --- | --- | --- |
 | `DONE_DB_PATH` | `apps/api/done.sqlite3` | plik SQLite |
 | `DONE_CORS_ORIGINS` | `http://localhost:8081,http://127.0.0.1:8081` | lista originów po przecinku |
-| `DONE_AI_ENABLED` | `false` | tworzy adapter Ollama |
 | `DONE_STT_ENABLED` | `false` | tworzy adapter OpenAI `gpt-4o-transcribe` |
 | `DONE_DEMO_FAILURES_ENABLED` | `true` | automatyczne syntetyczne awarie w nowych misjach |
 | `DONE_DEMO_ENDPOINTS_ENABLED` | `true` | endpointy reset/fault injection; po wyłączeniu zwracają `404` |
 
 Wartości boolean akceptują `1/0`, `true/false`, `yes/no` i `on/off`.
-
-### API do Ollama
-
-| Zmienna | Domyślna wartość |
-| --- | --- |
-| `DONE_OLLAMA_BASE_URL` | `http://127.0.0.1:11434` |
-| `DONE_OLLAMA_MODEL` | `qwen2.5:7b` |
-| `DONE_OLLAMA_CONNECT_TIMEOUT_SECONDS` | `2` |
-| `DONE_OLLAMA_REQUEST_TIMEOUT_SECONDS` | `60` |
-| `DONE_OLLAMA_MAX_CONCURRENCY` | `1` |
-| `DONE_OLLAMA_NUM_CTX` | `4096` |
-| `DONE_OLLAMA_NUM_PREDICT` | `256` |
-| `DONE_OLLAMA_TEMPERATURE` | `0` |
-| `DONE_OLLAMA_SEED` | `42` |
-| `DONE_OLLAMA_KEEP_ALIVE` | `15m` |
-| `DONE_OLLAMA_MAX_TOOL_ROUNDS` | `4` |
-
-`DONE_OLLAMA_MAX_TOOL_ROUNDS` jest obecnie parsowane do konfiguracji, ale
-adapter nie używa tej wartości do sterowania pętlą. Nie należy traktować jej
-jeszcze jako aktywnego limitu bezpieczeństwa.
 
 ### OpenAI Realtime
 
@@ -192,8 +171,8 @@ curl -fsS http://127.0.0.1:8001/health
 ```
 
 Sprawdza zapytanie do SQLite i zwraca liczbę seedowanych produktów. Nie odpytuje
-Ollama ani OpenAI. Alias `/v1/health` ma ten sam wynik, ale jest ukryty w
-OpenAPI.
+opcjonalnych usług OpenAI. Alias `/v1/health` ma ten sam wynik, ale jest ukryty
+w OpenAPI.
 
 Pełna diagnostyka opcjonalnego runtime:
 
@@ -212,11 +191,10 @@ Rekomendowany podział probe'ów:
 - readiness podstawowego text flow: `/health` ma `status=ok`, a oddzielny
   kontrolowany smoke test potwierdza zapis; sam health wykonuje tylko odczyt;
 - readiness audio: `speech_to_text.status=available`;
-- readiness enrichment AI: `ai.status=available` i `model_available=true`;
 - readiness ChatGPT Live: `realtime.status=available`.
 
-Nie należy blokować tekstowego flow tylko dlatego, że Ollama jest niedostępne:
-fallback jest częścią projektowanego zachowania.
+Tekstowy flow nie zależy od OpenAI: interpreter i walidacja kontraktu działają
+deterministycznie w procesie API.
 
 ## SQLite: utrzymanie, backup i restore
 
@@ -267,9 +245,9 @@ Aktualnie zaimplementowane mechanizmy:
 - walidacja requestów Pydantic oraz optimistic concurrency dla wybranych zmian;
 - token płatniczy zamiast PAN/CVV w domenie i API;
 - allowlista formatów i limit rozmiaru audio;
-- limit współbieżności, JSON schema i tool allowlisting;
+- limit współbieżności transkrypcji oraz allowlista funkcji Realtime;
 - osobne flagi wyłączające automatyczne awarie i endpointy demo;
-- deterministyczne policies nadrzędne wobec odpowiedzi LLM.
+- deterministyczna interpretacja i policies nadrzędne wobec wejścia z Realtime;
 - standardowy klucz OpenAI tylko na serwerze, krótkotrwały sekret WebRTC,
   zahashowany safety identifier i redagowane błędy dostawcy;
 
@@ -288,8 +266,7 @@ Braki blokujące publiczną produkcję:
 
 Przed wystawieniem usługi poza zaufany host: wyłącz oba demo flags, zawęź CORS,
 umieść API za TLS i authentication, ogranicz request body, chroń klucz OpenAI,
-odseparuj Ollama sieciowo, zaszyfruj backupy i przeprowadź restore drill. CORS nie jest kontrolą
-dostępu.
+zaszyfruj backupy i przeprowadź restore drill. CORS nie jest kontrolą dostępu.
 
 ## Obserwowalność i reagowanie
 
@@ -303,8 +280,7 @@ Typowe symptomy:
 | Symptom | Sprawdzenie | Zachowanie/akcja |
 | --- | --- | --- |
 | audio zwraca `503` | capabilities STT i request ID | sprawdź klucz, quota, model, sieć i timeout |
-| AI `unavailable` | capabilities, Ollama `/api/tags` | tekst działa przez fallback; zainstaluj właściwy model, jeśli enrichment jest wymagany |
-| AI `degraded` | `model_available` | nazwa modelu z env nie występuje w Ollama |
+| Realtime `unavailable` | capabilities Realtime i request ID | sprawdź flagę, klucz, quota, model i sieć |
 | `database is locked` | liczba workerów/procesów i dysk | pozostaw jednego writera; znajdź długą transakcję |
 | health ma inną liczbę produktów niż `14` | stan bazy/seed | sprawdź restore lub kontrolowany reset tylko w demo |
 
@@ -336,10 +312,10 @@ retry z limitem, reconciliation i obsługą podpisanych webhooków. Stan misji m
 odzwierciedlać niepewność, np. timeout płatności nie może automatycznie oznaczać
 odrzucenia bez późniejszego reconciliation.
 
-Istniejące `StructuredAIPort`, `SpeechToTextPort`, `MissionWorkflowPort` i
-`UserRepository` pokazują kierunek dependency inversion. Ollama,
-OpenAITranscriptionAdapter i SQLiteUserRepository są adapterami; symulator commerce nie ma
-jeszcze analogicznej granicy.
+Istniejące `SpeechToTextPort`, `RealtimeSessionPort`, `MissionWorkflowPort` i
+`UserRepository` pokazują kierunek dependency inversion.
+`OpenAITranscriptionAdapter`, `OpenAIRealtimeAdapter` i `SQLiteUserRepository`
+są adapterami; symulator commerce nie ma jeszcze analogicznej granicy.
 
 ## Weryfikacja przed wydaniem
 
@@ -347,12 +323,12 @@ jeszcze analogicznej granicy.
 npm run typecheck
 npm run test:mobile
 npm run test:api
-npm run test:stt
 npm run lint:api
-npm run lint:stt
 npm run build:web
+npm run doctor
 ```
 
-`npm run test` łączy typecheck oraz trzy zestawy testów, ale nie uruchamia lintów
-ani web build. Po testach wykonaj smoke test `/health`, capabilities, utworzenia
-misji tekstowej i — jeżeli STT jest wymagane — jednej prawdziwej transkrypcji.
+`npm run test` łączy typecheck oraz testy mobile i API, ale nie uruchamia lintów,
+web builda ani Expo Doctor. Po testach wykonaj smoke test `/health`, capabilities,
+utworzenia misji tekstowej i — jeżeli transkrypcja jest wymagana — jednego
+prawdziwego nagrania wysłanego do OpenAI.

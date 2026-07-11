@@ -4,7 +4,6 @@ services:
       context: ./apps/api
     environment:
       DONE_DB_PATH: /data/done.sqlite3
-      DONE_AI_ENABLED: "true"
       DONE_STT_ENABLED: "true"
       DONE_DEMO_FAILURES_ENABLED: "${DONE_DEMO_FAILURES_ENABLED:-true}"
       DONE_DEMO_ENDPOINTS_ENABLED: "${DONE_DEMO_ENDPOINTS_ENABLED:-true}"
@@ -16,11 +15,7 @@ services:
       DONE_REALTIME_TRANSCRIPTION_MODEL: "${DONE_REALTIME_TRANSCRIPTION_MODEL:-gpt-realtime-whisper}"
       DONE_TRANSCRIPTION_BASE_URL: "${DONE_TRANSCRIPTION_BASE_URL:-https://api.openai.com}"
       DONE_TRANSCRIPTION_MODEL: "${DONE_TRANSCRIPTION_MODEL:-gpt-4o-transcribe}"
-      DONE_OLLAMA_BASE_URL: http://host.docker.internal:11434
-      DONE_OLLAMA_MODEL: "${DONE_OLLAMA_MODEL:-qwen2.5:7b}"
       DONE_CORS_ORIGINS: "${DONE_CORS_ORIGINS:-http://localhost:8081,http://127.0.0.1:8081}"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:8001:8000"
     volumes:

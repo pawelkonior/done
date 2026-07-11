@@ -449,7 +449,6 @@ export async function createVoiceMission(input: VoiceMissionInput) {
     text: asString(transcriptionRaw.text, detail.mission.raw_voice_transcript),
     language: asString(transcriptionRaw.language) || undefined,
     model: asString(transcriptionRaw.model) || undefined,
-    duration_seconds: typeof transcriptionRaw.duration_seconds === "number" ? transcriptionRaw.duration_seconds : undefined,
   };
   return {
     mission_id: detail.mission.id,
