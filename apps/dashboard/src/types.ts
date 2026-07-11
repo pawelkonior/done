@@ -9,6 +9,15 @@ export type NodeId =
 
 export type NodeSubtitles = Partial<Record<NodeId, string>>;
 
+export interface NodeDetail {
+  title: string;
+  meta?: string;
+  description?: string;
+  tone?: "info" | "ok" | "warn" | "error";
+}
+
+export type NodeDetails = Partial<Record<NodeId, NodeDetail[]>>;
+
 export interface LoopEvent {
   type: string;
   title: string;

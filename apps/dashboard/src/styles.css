@@ -183,6 +183,109 @@ html, body {
 .graph { flex: 1; min-height: 180px; width: 100%; max-width: 1400px; }
 .graph svg { width: 100%; height: 100%; }
 
+.workflow-board {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(180px, 1fr));
+  grid-template-rows: minmax(320px, 1fr) auto;
+  gap: 10px;
+  overflow: auto;
+  padding: 4px;
+}
+
+.workflow-node {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  min-width: 180px;
+  min-height: 320px;
+  padding: 11px;
+  background: linear-gradient(150deg, var(--panel-2), var(--panel));
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  transition: border-color 0.25s ease, background 0.25s ease, box-shadow 0.25s ease;
+}
+
+.workflow-node:not([data-node="result"])::after {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  right: -9px;
+  width: 16px;
+  height: 16px;
+  content: "";
+  background: var(--line-strong);
+  clip-path: polygon(0 0, 100% 50%, 0 100%, 28% 50%);
+}
+
+.workflow-node[data-state="done"] { border-color: rgba(78, 240, 196, 0.58); }
+.workflow-node[data-state="done"]::after { background: var(--mint); }
+.workflow-node[data-state="active"] {
+  background: linear-gradient(150deg, rgba(78, 240, 196, 0.13), var(--panel));
+  border-color: var(--mint);
+  box-shadow: 0 0 22px rgba(78, 240, 196, 0.14);
+}
+.workflow-node[data-state="active"].warn {
+  background: linear-gradient(150deg, rgba(255, 174, 51, 0.14), var(--panel));
+  border-color: var(--warn);
+  box-shadow: 0 0 22px rgba(255, 174, 51, 0.14);
+}
+
+.workflow-node-header { display: flex; align-items: center; gap: 7px; }
+.workflow-node-number {
+  display: grid;
+  width: 21px;
+  height: 21px;
+  place-items: center;
+  color: var(--mint);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 800;
+  background: rgba(78, 240, 196, 0.1);
+  border: 1px solid rgba(78, 240, 196, 0.3);
+  border-radius: 999px;
+}
+.workflow-node.warn .workflow-node-number { color: var(--warn); background: rgba(255, 174, 51, 0.1); border-color: rgba(255, 174, 51, 0.34); }
+.workflow-node-header h2 { margin: 0; color: var(--ink); font-size: 14px; letter-spacing: 0.01em; }
+.workflow-node-subtitle { min-height: 30px; margin: 7px 0; color: var(--ink-dim); font-size: 11px; line-height: 1.3; }
+
+.workflow-node-details {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.workflow-detail {
+  display: grid;
+  gap: 3px;
+  padding: 7px;
+  background: rgba(10, 13, 19, 0.46);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.workflow-detail strong { overflow: hidden; color: var(--ink); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.workflow-detail-meta { overflow: hidden; color: var(--ink-dim); font-family: var(--mono); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.workflow-detail-description { color: var(--ink-faint); font-size: 10px; line-height: 1.35; }
+.workflow-detail[data-tone="ok"] { border-color: rgba(78, 240, 196, 0.48); }
+.workflow-detail[data-tone="ok"] .workflow-detail-meta { color: var(--mint); }
+.workflow-detail[data-tone="warn"] { border-color: rgba(255, 174, 51, 0.52); }
+.workflow-detail[data-tone="warn"] .workflow-detail-meta { color: var(--warn); }
+.workflow-detail[data-tone="error"] { border-color: rgba(255, 93, 115, 0.68); background: rgba(255, 93, 115, 0.08); }
+.workflow-detail[data-tone="error"] .workflow-detail-meta { color: var(--bad); }
+
+.workflow-feedback {
+  grid-column: 3 / 8;
+  padding: 7px 12px;
+  color: var(--ink-faint);
+  font-size: 11px;
+  text-align: center;
+  border: 1px dashed var(--line-strong);
+  border-radius: 8px;
+}
+.workflow-feedback.on { color: var(--warn); border-color: var(--warn); background: rgba(255, 174, 51, 0.07); box-shadow: 0 0 14px rgba(255, 174, 51, 0.14); }
+
 /* ---------- cart connected to workflow ---------- */
 
 .basket-flow {

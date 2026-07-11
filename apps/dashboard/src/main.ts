@@ -6,10 +6,10 @@ import { createDetailPanel, simulateLineItemPaymentFailure } from "./detail";
 import { createGraph } from "./graph";
 import { EVENT_NODE, FEEDBACK_EVENTS, WARN_EVENTS, WARN_SEVERITIES } from "./mapping";
 import { createPortfolioFlow } from "./portfolio";
-import { createStoreBatchFlow } from "./store-batches";
+import { storeBatchDetails } from "./store-batches";
 import { REPLAY_MISSION_TITLE, REPLAY_SCRIPT } from "./replay";
 import { createTicker } from "./ticker";
-import type { CatalogOffer, LoopEvent, MissionDetail } from "./types";
+import type { CatalogOffer, LoopEvent, MissionDetail, NodeDetails } from "./types";
 
 const EVENTS_POLL_MS = 1000;
 const MISSIONS_POLL_MS = 5000;
@@ -17,8 +17,7 @@ const MISSIONS_POLL_MS = 5000;
 type Mode = "connecting" | "live" | "replay";
 
 const graph = createGraph(document.getElementById("graph")!);
-const portfolioFlow = createPortfolioFlow(document.getElementById("basket-flow")!);
-const storeBatchFlow = createStoreBatchFlow(document.getElementById("store-batches")!);
+const portfolioFlow = createPortfolioFlow();
 const ticker = createTicker(document.getElementById("ticker")!);
 const detailPanel = createDetailPanel(document.getElementById("detail-panel")!);
 const missionTitleEl = document.getElementById("mission-title")!;
@@ -71,13 +70,11 @@ function dispatch(event: LoopEvent): void {
 function resetView(): void {
   graph.reset();
   portfolioFlow.reset();
-  storeBatchFlow.reset();
   ticker.reset();
   detailPanel.reset();
   latestDetail = null;
   lineItemFailureSimulation = false;
   batchTwoFailureSimulation = false;
-  renderStoreBatches();
   updateSimulationButton();
   cursor = 0;
   generation += 1;
@@ -97,15 +94,65 @@ function updateSimulationButton(): void {
     : "simulate Batch 2 decline";
 }
 
-function renderStoreBatches(): void {
-  storeBatchFlow.update(catalogOffers, batchTwoFailureSimulation);
+function mergeNodeDetails(...sources: NodeDetails[]): NodeDetails {
+  const merged: NodeDetails = {};
+  for (const source of sources) {
+    for (const [node, details] of Object.entries(source)) {
+      if (!details) continue;
+      const target = node as keyof NodeDetails;
+      merged[target] = [...(merged[target] ?? []), ...details];
+    }
+  }
+  return merged;
+}
+
+function baseNodeDetails(detail: MissionDetail): NodeDetails {
+  const storeCount = new Set(catalogOffers.map((offer) => offer.store_id)).size;
+  const details: NodeDetails = {
+    intake: [{
+      title: "Mission received",
+      meta: detail.mission.status.replaceAll("_", " "),
+      description: detail.mission.latest_update,
+      tone: "info",
+    }],
+    contract: [{
+      title: `Budget ${detail.mission.budget_limit.toFixed(2)} ${detail.mission.currency}`,
+      meta: `${detail.mission.current_step} of ${detail.mission.total_steps} steps`,
+      description: "Constraints and intent are locked before a basket can be purchased.",
+      tone: "info",
+    }],
+  };
+  if (storeCount > 0) {
+    details.snapshot = [{
+      title: `${catalogOffers.length} live catalog offers`,
+      meta: `${storeCount} store endpoints`,
+      description: "GET /v1/catalog/offers supplies price and availability snapshots.",
+      tone: "info",
+    }];
+  }
+  if (detail.order) {
+    details.result = [{
+      title: `Order ${detail.order.confirmation_code}`,
+      meta: detail.order.status,
+      description: "The confirmed order is the final state for successfully purchased items.",
+      tone: "ok",
+    }];
+  }
+  return details;
+}
+
+function renderWorkflow(detail: MissionDetail): void {
+  const portfolio = portfolioFlow.update(detail);
+  graph.setNodeSubtitles(portfolio.subtitles);
+  const batchDetails = storeBatchDetails(catalogOffers, batchTwoFailureSimulation);
+  graph.setNodeDetails(mergeNodeDetails(baseNodeDetails(detail), portfolio.details, { purchase: batchDetails }));
 }
 
 function renderDetail(detail: MissionDetail): void {
   latestDetail = detail;
   const renderedDetail = lineItemFailureSimulation ? simulateLineItemPaymentFailure(detail) : detail;
   detailPanel.update(renderedDetail);
-  graph.setNodeSubtitles(portfolioFlow.update(renderedDetail));
+  renderWorkflow(renderedDetail);
   updateSimulationButton();
 }
 
@@ -117,7 +164,7 @@ function stopReplay(): void {
 function scheduleReplayStep(index: number): void {
   const step = REPLAY_SCRIPT[index % REPLAY_SCRIPT.length];
   if (index > 0 && index % REPLAY_SCRIPT.length === 0) resetView();
-  graph.setNodeSubtitles(portfolioFlow.update(detailPanel.showReplay(step.type)));
+  renderWorkflow(detailPanel.showReplay(step.type));
   dispatch({ ...step, created_at: new Date().toISOString() });
   replayTimer = window.setTimeout(() => scheduleReplayStep(index + 1), step.delay);
 }
@@ -129,7 +176,7 @@ function enterReplay(reason: string): void {
   resetView();
   setMode("replay", reason);
   setMission(REPLAY_MISSION_TITLE, null);
-  graph.setNodeSubtitles(portfolioFlow.update(detailPanel.showReplay("mission.created")));
+  renderWorkflow(detailPanel.showReplay("mission.created"));
   scheduleReplayStep(0);
 }
 
@@ -207,16 +254,16 @@ simulateLineItemButton.addEventListener("click", () => {
 simulateBatchTwoButton.addEventListener("click", () => {
   if (catalogOffers.length === 0) return;
   batchTwoFailureSimulation = !batchTwoFailureSimulation;
-  renderStoreBatches();
+  if (latestDetail) renderDetail(latestDetail);
   updateSimulationButton();
 });
 
 async function loadStoreBatches(): Promise<void> {
   try {
     catalogOffers = await fetchCatalogOffers();
-    renderStoreBatches();
+    if (latestDetail) renderDetail(latestDetail);
   } catch {
-    storeBatchFlow.reset();
+    catalogOffers = [];
   } finally {
     updateSimulationButton();
   }
