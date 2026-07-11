@@ -191,6 +191,25 @@ export function LiveVoiceSheet({
       setStatus("complete");
       setInputStatus("captured");
       onMissionUpdatedRef.current?.(detail);
+      const nextClarification = detail.action_requests?.find(
+        (candidate) => candidate.status === "pending"
+          && candidate.owner === "user"
+          && candidate.type === "clarification"
+          && candidate.options.some((option) => option.id === "answer_by_voice"),
+      );
+      if (nextClarification) {
+        focusedActionSubmittedRef.current = false;
+        latestTurnTranscriptRef.current = "";
+        currentVoiceItemIdRef.current = null;
+        consumedVoiceItemIdsRef.current.clear();
+        transcriptBufferRef.current.clear();
+        setTranscript("");
+        setFinalTranscript("");
+        setTranscriptError(null);
+        transportRef.current?.disconnect();
+        setRetryKey((value) => value + 1);
+        return;
+      }
       pendingFocusedActionCloseRef.current = true;
       try {
         transportRef.current?.send({

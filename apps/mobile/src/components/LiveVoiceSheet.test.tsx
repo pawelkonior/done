@@ -316,6 +316,74 @@ describe("LiveVoiceSheet mission commands", () => {
     await screen.unmount();
   });
 
+  it("keeps Live open and reconnects when another clarification is still required", async () => {
+    const onClose = jest.fn();
+    const continuedDetail: MissionDetail = {
+      ...updatedDetail,
+      mission: {
+        ...updatedDetail.mission,
+        status: "clarification_required",
+        revision: 7,
+      },
+      action_requests: [{
+        id: "action-4",
+        type: "clarification",
+        reason_code: "MISSION_CONTRACT_INCOMPLETE",
+        question: "What delivery date and time do you need?",
+        status: "pending",
+        owner: "user",
+        options: [{ id: "answer_by_voice", label: "Answer by voice" }],
+        context: { missing_information: ["deadline"] },
+        created_at: "2026-07-11T10:03:00Z",
+      }],
+    };
+    const onSubmitFocusedAction = jest.fn(async () => continuedDetail);
+    const onMissionUpdated = jest.fn();
+    const screen = await render(
+      <LiveVoiceSheet
+        visible
+        language="en-PL"
+        missionId="mission-1"
+        focusedAction={{
+          id: "action-3",
+          revision: 6,
+          choice: "answer_by_voice",
+          question: "What should this purchase include?",
+          missingDetails: ["What to buy: gifts or party supplies", "Delivery date and time"],
+        }}
+        onSubmitFocusedAction={onSubmitFocusedAction}
+        onClose={onClose}
+        onMissionUpdated={onMissionUpdated}
+      />,
+    );
+    await waitFor(() => expect(getRealtimeClientSecret).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      mockCallbacks.onEvent({
+        type: "input_audio_buffer.committed",
+        item_id: "item-partial-answer",
+        previous_item_id: null,
+      });
+      mockCallbacks.onEvent({
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: "item-partial-answer",
+        content_index: 0,
+        transcript: "Buy birthday party supplies.",
+      });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(onMissionUpdated).toHaveBeenCalledWith(continuedDetail));
+    await waitFor(() => expect(getRealtimeClientSecret).toHaveBeenCalledTimes(2));
+    expect(onClose).not.toHaveBeenCalled();
+    await act(async () => {
+      mockCallbacks.onEvent({ type: "response.done", response: { output: [] } });
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+    expect(onClose).not.toHaveBeenCalled();
+    await screen.unmount();
+  });
+
   it("preserves intake mode and does not execute mission commands", async () => {
     const onMissionCreated = jest.fn();
     const onSubmitTranscript = jest.fn(async () => ({

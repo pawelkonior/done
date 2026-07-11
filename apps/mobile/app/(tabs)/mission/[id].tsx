@@ -209,7 +209,16 @@ export default function MissionDetailScreen() {
           setLiveVoiceOpen(false);
           setFocusedVoiceAction(null);
         }}
-        onMissionUpdated={() => void query.refetch()}
+        onMissionUpdated={(updatedDetail) => {
+          const nextClarification = updatedDetail.action_requests?.find(
+            (candidate) => candidate.status === "pending"
+              && candidate.owner === "user"
+              && candidate.type === "clarification"
+              && candidate.options.some((option) => option.id === "answer_by_voice"),
+          );
+          setFocusedVoiceAction(nextClarification ?? null);
+          void query.refetch();
+        }}
         onMissionRefreshRequested={() => void query.refetch()}
       />
     </AppScreen>
